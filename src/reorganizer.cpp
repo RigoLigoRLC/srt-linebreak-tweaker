@@ -84,6 +84,7 @@ void Reorganizer::OpenFile(QString name)
   mDoUpdateScrollBarOnChange = true;
   UpdateExternals(true);
   mCurrentLine = mModel.size() - 1;
+  mBarVert->setValue(mCurrentLine + 1);
   f.close();
 }
 
@@ -101,13 +102,17 @@ void Reorganizer::SaveFile(QString name)
   for(auto &i : mModel)
   {
     ts << count << '\n';
-    ts << MStoTC(i.begin) << " --> " << MStoSrtTC(i.end()) << '\n';
+    ts << MStoSrtTC(i.begin) << " --> " << MStoSrtTC(i.end()) << '\n';
     for(auto &j : i.words)
     {
       ts << j.text;
       if(j.delim.cell())
-        ts << j.delim << "\n\n";
+        ts << j.delim;
+      else
+        ts << '\n';
     }
+    ts << '\n';
+    count++;
   }
 }
 
