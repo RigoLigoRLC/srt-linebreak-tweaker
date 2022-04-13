@@ -159,18 +159,6 @@ void Reorganizer::paintEvent(QPaintEvent *e)
   for(i32 i = fromLines; i <= toLines; i++)
   {
     auto &entry = mModel[i];
-    if(entry.type == Dialog::Placeholder)
-    {
-      // Placeholder
-      p.setPen(p1);
-      p.setBrush(b2);
-      p.drawRect(QRectF(0, top, TimeWidth, LineHeight));
-      p.setPen(pt);
-      p.drawText(QRectF(0, top, TimeWidth - HorizMargin, LineHeight),
-                 Qt::AlignRight | Qt::AlignVCenter,
-                 MStoTC(mModel[i].begin));
-    }
-    else
     {
       // Actual text
       p.setPen(p1);
@@ -245,7 +233,7 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
   auto pos = e->pos();
   auto deltaY = pos.y() - height() / 2;
   mCurrentOperatingLine = mCurrentLine + (deltaY + Sign(deltaY) * LineHeight / 2) / LineHeight;
-  if(mCurrentOperatingLine < 0 || mCurrentOperatingLine >= mModel.size())
+  if(mCurrentOperatingLine < 0 || mCurrentOperatingLine >= mModel.size()) // Line invalid
     return;
   auto &opLine = mModel[mCurrentOperatingLine];
   auto &opWords = opLine.words;
@@ -360,11 +348,6 @@ Status Reorganizer::AppendToModel(u64 begin, u64 end, QString dialog)
     auto lastEnd = mModel.back().end();
     if(begin < lastEnd)
       return FailOccupied;
-//    if(lastEnd < begin)
-//      mModel.append(Dialog { .type = Dialog::Placeholder,
-//                             .begin = lastEnd,
-//                             .duration = begin - lastEnd,
-//                             .words = SplitDialogByDelim(dialog) });
   }
   mModel.append(Dialog { .type = Dialog::Real,
                          .begin = begin,
@@ -387,20 +370,6 @@ Status Reorganizer::CommitCurrentOperation()
   {
     case MergePrev:
       if(mCurrentOperatingLine == 0) return FailNoTarget; // Can't do it
-      if(mModel[mCurrentOperatingLine - 1].type == Dialog::Placeholder)
-      {
-        if(mCurrentOperatingLine == 1) // Prev dialog is empty and no further scrolling is possible
-          return FailNoTarget;
-        else
-        {
-          mUndo.push(new LRCmd::MergeToPrevLine(mModel,
-                                                mCurrentOperatingLine,
-                                                mCurrentOperatingWord,
-                                                mCurrentOperatingLine - 2));
-          mCurrentOperatingLine--;
-          return Success;
-        }
-      }
       mUndo.push(new LRCmd::MergeToPrevLine(mModel,
                                             mCurrentOperatingLine,
                                             mCurrentOperatingWord,
@@ -412,19 +381,6 @@ Status Reorganizer::CommitCurrentOperation()
 
     case MergeNext:
       if(mCurrentOperatingLine == mModel.size() - 1) return FailNoTarget; // Can't do
-      if(mModel[mCurrentOperatingLine + 1].type == Dialog::Placeholder)
-      {
-        if(mCurrentOperatingLine == mModel.size() - 2) // No further scrolling
-          return FailNoTarget;
-        else
-        {
-          mUndo.push(new LRCmd::MergeToNextLine(mModel,
-                                                mCurrentOperatingLine,
-                                                mCurrentOperatingWord,
-                                                mCurrentOperatingLine + 2));
-          return Success;
-        }
-      }
       mUndo.push(new LRCmd::MergeToNextLine(mModel,
                                             mCurrentOperatingLine,
                                             mCurrentOperatingWord,
