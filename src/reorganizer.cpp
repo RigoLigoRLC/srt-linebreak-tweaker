@@ -131,14 +131,19 @@ void Reorganizer::paintEvent(QPaintEvent *e)
 
   QPainter p(this);
   i32 h = height(),
+      h_list = h - NleHeight,
       w = width(),
-      h_2 = h / 2,
+      h_2 = h_list / 2,
       lines_2 = ceil((float)h_2 / LineHeight),
       maxLines = mModel.size() - 1,
       fromLines = mCurrentLine - lines_2,
       toLines = I32Min2(lines_2 + mCurrentLine, maxLines),
       verticalOffset = h_2 - lines_2 * LineHeight - LineHeight / 2;
   u64 lastEnd = 0; // The ending time of last dialog, used to paint the empty time if needed
+
+  //
+  //  ====== List editor area ======
+  //
 
   QPen p1 { Qt::black },
        pt { FgText },
@@ -147,6 +152,7 @@ void Reorganizer::paintEvent(QPaintEvent *e)
          b2 { BgEmpty, Qt::SolidPattern };
 
   p.setFont(mDispFont);
+  p.setClipRect(QRectF(0, 0, w, h_list));
 
   qreal fromTop = verticalOffset, top;
 
@@ -242,9 +248,13 @@ void Reorganizer::paintEvent(QPaintEvent *e)
 
   // Division lines
   p.drawLine(QPointF(TimeWidth + EmptyLengthWidth, 0),
-             QPointF(TimeWidth + EmptyLengthWidth, h));
+             QPointF(TimeWidth + EmptyLengthWidth, h_list));
   p.drawLine(QPointF(2 * TimeWidth + EmptyLengthWidth, 0),
-             QPointF(2 * TimeWidth + EmptyLengthWidth, h));
+             QPointF(2 * TimeWidth + EmptyLengthWidth, h_list));
+
+  //
+  // ====== NLE editor area ======
+  //
 
   p.end();
 }
@@ -254,7 +264,8 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
   mIsOnDirtyAction = true;
   // Determine where the mouse is at
   auto pos = e->pos();
-  auto deltaY = pos.y() - height() / 2;
+  auto h = height() - NleHeight,
+       deltaY = pos.y() - h / 2;
   mCurrentOperatingLine = mCurrentLine + (deltaY + Sign(deltaY) * LineHeight / 2) / LineHeight;
   if(mCurrentOperatingLine < 0 || mCurrentOperatingLine >= mModel.size()) // Line invalid
   {

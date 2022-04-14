@@ -72,12 +72,17 @@ class Reorganizer : public QWidget
 
   private: // Constants
     static constexpr i32
+      // Horizontal space
       LineHeight = 20,
       HorizMargin = 5,
       TimeWidth = 90,
       DurationWidth = 50,
       EmptyLengthWidth = 40,
-      ReservedSpace = TimeWidth * 2 + DurationWidth + EmptyLengthWidth;
+      ReservedSpace = TimeWidth * 2 + DurationWidth + EmptyLengthWidth,
+
+      // NLE space
+      NleHeight = 200
+    ;
     static constexpr f64 ScrollCoeff = -0.9;
 
   signals:
