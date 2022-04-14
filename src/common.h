@@ -7,7 +7,8 @@ enum Status
   Success,
   FailOccupied,
   FailNoTarget,
-  FailNoAction
+  FailNoAction,
+  FailInvalidOp,
 };
 
 

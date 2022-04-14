@@ -45,4 +45,16 @@ namespace LRCmd
       u64 mNextDuration, mNextBegin, mCurrDuration;
       bool mCurrDestroyed;
   };
+
+  class SplitToNextLine : public CmdBase
+  {
+    public:
+      SplitToNextLine(DialogVec &model, i32 iDialog, i32 iWord);
+      void undo() override;
+      void redo() override;
+    private:
+      i32 mNextDialog;
+      QChar mDelimMovedTail;
+      u64 mCurrDuration;
+  };
 }

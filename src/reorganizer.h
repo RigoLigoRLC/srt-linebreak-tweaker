@@ -71,10 +71,13 @@ class Reorganizer : public QWidget
     QFontMetricsF mDispFontMet;
 
   private: // Constants
-    static constexpr i32 LineHeight = 20,
-                         HorizMargin = 5,
-                         TimeWidth = 200,
-                         TimeWidth_2 = TimeWidth / 2;
+    static constexpr i32
+      LineHeight = 20,
+      HorizMargin = 5,
+      TimeWidth = 90,
+      DurationWidth = 50,
+      EmptyLengthWidth = 40,
+      ReservedSpace = TimeWidth * 2 + DurationWidth + EmptyLengthWidth;
     static constexpr f64 ScrollCoeff = -0.9;
 
   signals:

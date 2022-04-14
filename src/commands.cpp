@@ -152,3 +152,52 @@ void LRCmd::MergeToNextLine::redo()
     next.duration += timeDelta;
   }
 }
+
+//
+// SplitToNextLine
+//
+
+
+LRCmd::SplitToNextLine::SplitToNextLine(DialogVec &model, i32 iDialog, i32 iWord) :
+  CmdBase(model)
+{
+  setText("Split to new line after");
+  mDialog = iDialog;
+  mWord = iWord;
+}
+
+void LRCmd::SplitToNextLine::undo()
+{
+  auto &curr = mModel[mDialog], &next = mModel[mDialog + 1];
+  auto &currwords = curr.words, &nextwords = next.words;
+
+  currwords.append(nextwords);
+  curr.duration = mCurrDuration;
+  mModel.removeAt(mDialog + 1);
+}
+
+void LRCmd::SplitToNextLine::redo()
+{
+  auto &curr = mModel[mDialog];
+  auto &currwords = curr.words;
+  i32 currSize = currwords.size();
+  mCurrDuration = curr.duration;
+
+  u64 timeDelta = ((f64)currSize - mWord) / currSize * curr.duration;
+  curr.duration -= timeDelta;
+
+  Dialog newdialog {
+    .begin = curr.end(),
+    .duration = timeDelta
+  };
+
+  auto &newwords = newdialog.words;
+
+  for(int i = mWord; i < currSize; i++)
+  {
+    newwords.append(currwords[mWord]);
+    currwords.removeAt(mWord);
+  }
+
+  mModel.insert(mDialog + 1, newdialog);
+}

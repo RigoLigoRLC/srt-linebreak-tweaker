@@ -138,6 +138,7 @@ void Reorganizer::paintEvent(QPaintEvent *e)
       fromLines = mCurrentLine - lines_2,
       toLines = I32Min2(lines_2 + mCurrentLine, maxLines),
       verticalOffset = h_2 - lines_2 * LineHeight - LineHeight / 2;
+  u64 lastEnd = 0; // The ending time of last dialog, used to paint the empty time if needed
 
   QPen p1 { Qt::black },
        pt { FgText },
@@ -160,19 +161,39 @@ void Reorganizer::paintEvent(QPaintEvent *e)
   {
     auto &entry = mModel[i];
     {
-      // Actual text
+      // Reserved space, timestamp etc
       p.setPen(p1);
-      p.setBrush(b1);
+      p.setBrush(b2); // Dark color
       p.setPen(pt);
-      p.drawRect(QRectF(0, top, TimeWidth, LineHeight));
-      p.drawText(QRectF(0, top, TimeWidth_2 - HorizMargin, LineHeight),
+      p.drawRect(QRectF(EmptyLengthWidth, top, ReservedSpace, LineHeight));
+
+      if(entry.begin != lastEnd) // Has empty space between current dialog and last dialog
+      {
+        p.drawPolygon(QVector<QPointF>{{0, top - LineHeight / 2},
+                                       {EmptyLengthWidth - 8, top - LineHeight / 2},
+                                       {EmptyLengthWidth, top},
+                                       {EmptyLengthWidth - 8, top + LineHeight / 2},
+                                       {0, top + LineHeight / 2}});
+        p.drawText(QRectF(0, top - LineHeight / 2, EmptyLengthWidth - 8, LineHeight),
+                   Qt::AlignRight | Qt::AlignVCenter,
+                   QString::number((entry.begin - lastEnd) / 1000.0)); // Empty space
+      }
+      p.drawText(QRectF(EmptyLengthWidth, top, TimeWidth - HorizMargin, LineHeight),
                  Qt::AlignRight | Qt::AlignVCenter,
-                 MStoTC(mModel[i].begin));
-      p.drawText(QRectF(TimeWidth_2 + HorizMargin, top, TimeWidth_2 - HorizMargin, LineHeight),
+                 MStoTC(entry.begin)); // From
+      p.drawText(QRectF(EmptyLengthWidth + TimeWidth + HorizMargin, top,
+                        TimeWidth - HorizMargin, LineHeight),
                  Qt::AlignLeft | Qt::AlignVCenter,
-                 MStoTC(mModel[i].end()));
+                 MStoTC(entry.end())); // To
+      p.drawText(QRectF(ReservedSpace - DurationWidth, top, DurationWidth - HorizMargin, LineHeight),
+                 Qt::AlignRight | Qt::AlignVCenter,
+                 QString::number(entry.duration / 1000.0)); // Duration
+      lastEnd = entry.end();
+
+      p.setBrush(b1); // Light brush
+
       // All the text blocks
-      f64 left = TimeWidth;
+      f64 left = ReservedSpace;
       for(auto &i : entry.words)
       {
         QRectF currWordRect = QRectF(left, top, i._cachedBlockWidthPx, LineHeight);
@@ -192,7 +213,7 @@ void Reorganizer::paintEvent(QPaintEvent *e)
   if(mCurrentOperatingLine >= 0)
   {
     f64 opTop = fromTop + (mCurrentOperatingLine - fromLines) * LineHeight,
-        opLeft = TimeWidth;
+        opLeft = ReservedSpace;
     QBrush bw { Qt::white, Qt::SolidPattern };
     p.setBrush(bw);
     p.setCompositionMode(QPainter::CompositionMode_Difference);
@@ -210,7 +231,7 @@ void Reorganizer::paintEvent(QPaintEvent *e)
     }
     else // To left
     {
-      f64 opW = TimeWidth;
+      f64 opW = ReservedSpace;
       for(int i = 0; i <= mCurrentOperatingWord; i++) opW += opWords[i]._cachedBlockWidthPx;
       p.drawRect(QRectF(0, opTop, opW, LineHeight));
     }
@@ -218,10 +239,12 @@ void Reorganizer::paintEvent(QPaintEvent *e)
 
   p.setPen(p1);
   p.setCompositionMode(QPainter::CompositionMode::CompositionMode_SourceOver);
-  p.drawLine(QPointF(TimeWidth_2, 0),
-             QPointF(TimeWidth_2, h));
-  p.drawLine(QPointF(TimeWidth, 0),
-             QPointF(TimeWidth, h));
+
+  // Division lines
+  p.drawLine(QPointF(TimeWidth + EmptyLengthWidth, 0),
+             QPointF(TimeWidth + EmptyLengthWidth, h));
+  p.drawLine(QPointF(2 * TimeWidth + EmptyLengthWidth, 0),
+             QPointF(2 * TimeWidth + EmptyLengthWidth, h));
 
   p.end();
 }
@@ -234,10 +257,13 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
   auto deltaY = pos.y() - height() / 2;
   mCurrentOperatingLine = mCurrentLine + (deltaY + Sign(deltaY) * LineHeight / 2) / LineHeight;
   if(mCurrentOperatingLine < 0 || mCurrentOperatingLine >= mModel.size()) // Line invalid
+  {
+    mCurrentOperatingLine = -1;
     return;
+  }
   auto &opLine = mModel[mCurrentOperatingLine];
   auto &opWords = opLine.words;
-  f64 endPos = TimeWidth;
+  f64 endPos = ReservedSpace;
   mCurrentOperatingWord = opWords.size() - 1;
   if(opLine.type == Dialog::Real)
   {
@@ -366,6 +392,8 @@ Status Reorganizer::CommitCurrentOperation()
 {
   if(mCurrentOperatingLine < 0 || mDesiredOperation == AtPlace)
     return FailNoAction;
+  if(mCurrentOperatingLine > mModel.size())
+    return FailInvalidOp;
   switch(mDesiredOperation)
   {
     case MergePrev:
@@ -375,8 +403,6 @@ Status Reorganizer::CommitCurrentOperation()
                                             mCurrentOperatingWord,
                                             mCurrentOperatingLine - 1));
       mCurrentOperatingLine--;
-      return Success;
-
       break;
 
     case MergeNext:
@@ -385,8 +411,6 @@ Status Reorganizer::CommitCurrentOperation()
                                             mCurrentOperatingLine,
                                             mCurrentOperatingWord,
                                             mCurrentOperatingLine + 1));
-      return Success;
-
       break;
 
     case SplitPrev:
@@ -394,14 +418,19 @@ Status Reorganizer::CommitCurrentOperation()
       break;
 
     case SplitNext:
-
+      if(mCurrentOperatingWord == 0) return FailNoTarget;
+      mUndo.push(new LRCmd::SplitToNextLine(mModel,
+                                            mCurrentOperatingLine,
+                                            mCurrentOperatingWord));
       break;
 
     case None:
     case AtPlace: return FailNoTarget;
   }
 
-  return FailNoAction;
+
+  UpdateExternals();
+  return Success;
 }
 
 void Reorganizer::UpdateExternals(bool force)
