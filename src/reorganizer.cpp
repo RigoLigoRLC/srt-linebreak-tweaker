@@ -2,6 +2,9 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QPainter>
+#include <QTextCodec>
+#include <QApplication>
+#include <QStyleHints>
 #include <math.h>
 
 #include <QDebug>
@@ -9,28 +12,49 @@
 #include <util.h>
 #include "commands.h"
 #include "reorganizer.h"
+#include <QLineEdit>
 
 Reorganizer::Reorganizer(QWidget *parent) :
   QWidget(parent),
-  mDispFont("sansserif", 10),
+  mDispFont("sansserif", 9),
   mDispFontMet(mDispFont),
   mMouseDownPos()
 {
-  mCurrentLine = mCurrentOperatingLine = -1;
+  mCurrentActiveLine = mCurrentLongestLine = mCurrentLine = mCurrentOperatingLine = -1;
+  mLongestLineWidth = 0.0;
   mDoUpdateScrollBarOnChange = true;
   mBarHoriz = mBarVert = nullptr;
-  mIsOnDirtyAction = false;
-  mInternScrollOffset = 0;
+  mDirtyActionType = NoAction;
+  mVertScrollOffset = mHorizScrollOffset = 0;
   mCurrentLine = 0;
-  mDesiredOperation = None;
+  mDesiredDragOp = NoDrag;
+  mMouseDownTime = QTime::currentTime();
+  mExpectingDblClk = false;
+
+  mEdit = new QLineEdit(this);
+  mEdit->setFixedWidth(250);
+  mEdit->setVisible(false); // Hidden by default
+  connect(mEdit, &QLineEdit::returnPressed, this, &Reorganizer::EditBlockTextInSitu_Commit);
+
 }
 
-void Reorganizer::SetScrollBars(QScrollBar *horiz, QScrollBar *vert)
+void Reorganizer::SetScrollBars(QScrollBar *horiz, QScrollBar *vert, QScrollBar *nleHoriz)
 {
   mBarHoriz = horiz;
   mBarVert = vert;
+  mBarNleHoriz = nleHoriz;
   connect(vert, &QScrollBar::sliderMoved,
           this, &Reorganizer::ScrolledToEntry);
+  connect(horiz, &QScrollBar::sliderMoved,
+          this, &Reorganizer::ScrollHorizontal);
+}
+
+void Reorganizer::SetTimecodeEditBtns(QPushButton *begin, QPushButton *end)
+{
+  mBtnBegin = begin;
+  mBtnEnd = end;
+  begin->setFixedWidth(EmptyLengthWidth + TimeWidth);
+  end->setFixedWidth(DurationWidth + TimeWidth);
 }
 
 void Reorganizer::OpenFile(QString name)
@@ -43,7 +67,7 @@ void Reorganizer::OpenFile(QString name)
     return;
   }
   // Clear everything
-  mInternScrollOffset = 0;
+  mVertScrollOffset = 0;
   mCurrentLine = 0;
   mCurrentLine = mCurrentOperatingLine = -1;
   mModel.clear();
@@ -55,6 +79,7 @@ void Reorganizer::OpenFile(QString name)
   QString line, currtext;
   bool lastLineEmpty = false;
   int h1 = 0, m1 = 0, s1 = 0, ms1 = 0, h2 = 0, m2 = 0, s2 = 0, ms2 = 0;
+  ts.setCodec("UTF-8");
   while(!ts.atEnd())
   { // Assume input is completely sane
     line = ts.readLine(); // Sequence number
@@ -85,6 +110,7 @@ void Reorganizer::OpenFile(QString name)
   UpdateExternals(true);
   mCurrentLine = mModel.size() - 1;
   mBarVert->setValue(mCurrentLine + 1);
+  emit SendNotify(tr("Loaded %1 lines").arg(mModel.size()), 0);
   f.close();
 }
 
@@ -149,10 +175,11 @@ void Reorganizer::paintEvent(QPaintEvent *e)
        pt { FgText },
        pt2 { FgGreyText };
   QBrush b1 { BgTile, Qt::SolidPattern },
-         b2 { BgEmpty, Qt::SolidPattern };
+         b2 { BgEmpty, Qt::SolidPattern },
+         ba { FgText, Qt::Dense5Pattern };
 
   p.setFont(mDispFont);
-  p.setClipRect(QRectF(0, 0, w, h_list));
+  p.setClipRect(QRectF(0, 0, w, h_list)); // Clip at list area first
 
   qreal fromTop = verticalOffset, top;
 
@@ -163,15 +190,39 @@ void Reorganizer::paintEvent(QPaintEvent *e)
   }
   top = fromTop;
 
+  // The shadow of Current Active Line
+  p.setBrush(ba);
+  p.drawRect(QRectF(0, (mCurrentActiveLine - fromLines) * LineHeight +
+                       (fromLines ? verticalOffset : top),
+                    w, LineHeight));
   for(i32 i = fromLines; i <= toLines; i++)
   {
     auto &entry = mModel[i];
     {
+      p.setBrush(b1); // Light brush
+      // All the text blocks
+      f64 left = ReservedSpace - mHorizScrollOffset;
+      for(auto &i : entry.words)
+      {
+        // Only draw visible blocks
+        if(left + i._cachedBlockWidthPx > ReservedSpace)
+        {
+          QRectF currWordRect = QRectF(left, top, i._cachedBlockWidthPx, LineHeight);
+          p.drawRect(currWordRect);
+          currWordRect.adjust(HorizMargin, 0, 0, 0);
+          p.drawText(currWordRect,
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     i.text);
+        }
+
+        left += i._cachedBlockWidthPx;
+      }
+
       // Reserved space, timestamp etc
       p.setPen(p1);
       p.setBrush(b2); // Dark color
       p.setPen(pt);
-      p.drawRect(QRectF(EmptyLengthWidth, top, ReservedSpace, LineHeight));
+      p.drawRect(QRectF(EmptyLengthWidth, top, ReservedSpace - EmptyLengthWidth, LineHeight));
 
       if(entry.begin != lastEnd) // Has empty space between current dialog and last dialog
       {
@@ -195,25 +246,15 @@ void Reorganizer::paintEvent(QPaintEvent *e)
                  Qt::AlignRight | Qt::AlignVCenter,
                  QString::number(entry.duration / 1000.0)); // Duration
       lastEnd = entry.end();
-
-      p.setBrush(b1); // Light brush
-
-      // All the text blocks
-      f64 left = ReservedSpace;
-      for(auto &i : entry.words)
-      {
-        QRectF currWordRect = QRectF(left, top, i._cachedBlockWidthPx, LineHeight);
-        p.drawRect(currWordRect);
-        currWordRect.adjust(HorizMargin, 0, 0, 0);
-        p.drawText(currWordRect,
-                   Qt::AlignLeft | Qt::AlignVCenter,
-                   i.text);
-
-        left += i._cachedBlockWidthPx;
-      }
     }
     top += LineHeight;
   }
+
+  // Division lines
+  p.drawLine(QPointF(TimeWidth + EmptyLengthWidth, 0),
+             QPointF(TimeWidth + EmptyLengthWidth, h_list));
+  p.drawLine(QPointF(2 * TimeWidth + EmptyLengthWidth, 0),
+             QPointF(2 * TimeWidth + EmptyLengthWidth, h_list));
 
   // Process the currently operating line
   if(mCurrentOperatingLine >= 0)
@@ -225,32 +266,33 @@ void Reorganizer::paintEvent(QPaintEvent *e)
     p.setCompositionMode(QPainter::CompositionMode_Difference);
     QRectF fillArea;
     auto &opWords = mModel[mCurrentOperatingLine].words;
-    if(mDesiredOperation == AtPlace) // Go nowhere
+    if(mDesiredDragOp == AtPlace) // Go nowhere
     {
+      p.setClipRect(QRectF(ReservedSpace, 0, w - ReservedSpace, h_list)); // Clip at visible list area
       for(int i = 0; i < mCurrentOperatingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
+      opLeft -= mHorizScrollOffset;
       p.drawRect(QRectF(opLeft, opTop, opWords[mCurrentOperatingWord]._cachedBlockWidthPx, LineHeight));
     }
-    else if(mDesiredOperation == MergeNext || mDesiredOperation == SplitNext) // To right
+    else if(mDesiredDragOp == MergeNext || mDesiredDragOp == SplitNext) // To right
     {
+      p.setClipRect(QRectF(ReservedSpace, 0, w - ReservedSpace, h_list)); // Clip at visible list area
       for(int i = 0; i < mCurrentOperatingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
+      opLeft -= mHorizScrollOffset;
       p.drawRect(QRectF(opLeft, opTop, w - opLeft, LineHeight));
     }
     else // To left
     {
+      // Do not clip, let the inverse color fill through the left border
       f64 opW = ReservedSpace;
       for(int i = 0; i <= mCurrentOperatingWord; i++) opW += opWords[i]._cachedBlockWidthPx;
-      p.drawRect(QRectF(0, opTop, opW, LineHeight));
+      p.drawRect(QRectF(0, opTop, opW - mHorizScrollOffset, LineHeight));
     }
+    // Draw activate threshold
+    p.drawEllipse(mMouseDownPos, ActivateThreshold, ActivateThreshold);
   }
 
   p.setPen(p1);
   p.setCompositionMode(QPainter::CompositionMode::CompositionMode_SourceOver);
-
-  // Division lines
-  p.drawLine(QPointF(TimeWidth + EmptyLengthWidth, 0),
-             QPointF(TimeWidth + EmptyLengthWidth, h_list));
-  p.drawLine(QPointF(2 * TimeWidth + EmptyLengthWidth, 0),
-             QPointF(2 * TimeWidth + EmptyLengthWidth, h_list));
 
   //
   // ====== NLE editor area ======
@@ -261,83 +303,156 @@ void Reorganizer::paintEvent(QPaintEvent *e)
 
 void Reorganizer::mousePressEvent(QMouseEvent *e)
 {
-  mIsOnDirtyAction = true;
   // Determine where the mouse is at
   auto pos = e->pos();
   auto h = height() - NleHeight,
-       deltaY = pos.y() - h / 2;
-  mCurrentOperatingLine = mCurrentLine + (deltaY + Sign(deltaY) * LineHeight / 2) / LineHeight;
-  if(mCurrentOperatingLine < 0 || mCurrentOperatingLine >= mModel.size()) // Line invalid
+       deltaY = pos.y() - h / 2,
+       realX = pos.x() + mHorizScrollOffset;
+  f64 endPos;
+
+  if(e->pos().y() > h)
+    return NleMousePressEvent(e);
+
+  SetCurrentActiveLine(mCurrentLine + (deltaY + Sign(deltaY) * LineHeight / 2) / LineHeight);
+  if(mCurrentActiveLine < 0 || mCurrentActiveLine >= mModel.size()) // Line invalid
   {
-    mCurrentOperatingLine = -1;
-    return;
+    SetCurrentActiveLine(-1);
   }
-  auto &opLine = mModel[mCurrentOperatingLine];
-  auto &opWords = opLine.words;
-  f64 endPos = ReservedSpace;
-  mCurrentOperatingWord = opWords.size() - 1;
-  if(opLine.type == Dialog::Real)
+  else
   {
-    for(int i = 0; i < opWords.size(); i++)
+    // Clicking on a valid line, update current active line
+    mCurrentOperatingLine = mCurrentActiveLine;
+
+    // Figure out the word currently under the mouse
+    auto &opLine = mModel[mCurrentOperatingLine];
+    auto &opWords = opLine.words;
+    endPos = ReservedSpace;
+    mCurrentOperatingWord = opWords.size() - 1;
+    if(opLine.type == Dialog::Real)
     {
-      endPos += opWords[i]._cachedBlockWidthPx;
-      if(endPos > pos.x())
+      for(int i = 0; i < opWords.size(); i++)
       {
-        mCurrentOperatingWord = i;
-        update();
-        break;
+        endPos += opWords[i]._cachedBlockWidthPx;
+        if(endPos > realX)
+        {
+          mCurrentOperatingWord = i;
+          update();
+          break;
+        }
       }
     }
   }
-  mMouseDownPos = pos;
-  mDesiredOperation = AtPlace;
+  if(pos.x() < ReservedSpace)
+  {
+    // TODO: Edit of timestamp
+  }
+
+  // Double click detection
+  auto nowTime = QTime::currentTime();
+  QPointF newPos = e->pos();
+  if(mExpectingDblClk &&
+     mMouseDownTime.msecsTo(nowTime) < QApplication::doubleClickInterval() &&
+     QLineF(mMouseDownPos, newPos).length() < qApp->styleHints()->mouseDoubleClickDistance())
+  {
+    auto &opWords = mModel[mCurrentOperatingLine].words;
+    SetDirtyAction(DblClkEditBlock); // Identify as double click
+    EditBlockTextInSitu_Start(
+          QPointF(endPos - opWords[mCurrentOperatingWord]._cachedBlockWidthPx,
+                  h / 2 + (mCurrentActiveLine - mCurrentLine + 0.5) * LineHeight),
+          opWords[mCurrentOperatingWord].text);
+    mExpectingDblClk = false;
+  }
+  else
+  {
+    mExpectingDblClk = true;
+    // Not double click, consider other situations
+    if(mDirtyActionType == DblClkEditBlock) // Cancelling an double click edit
+    {
+      EditBlockTextInSitu_Abort();
+    }
+    else
+    {
+      SetDirtyAction(DragBlock);
+      mDesiredDragOp = AtPlace;
+    }
+  }
+
+  mMouseDownPos = pos; // Remember mouse position, gonna use in double click detection
+  mMouseDownTime = nowTime;
 }
 
 void Reorganizer::mouseMoveEvent(QMouseEvent *e)
 {
-  constexpr f64 XtoYCoeff = 0.5, // Usage: if coeff * DeltaX > DeltaY then considers going sideways
-                ActivateThreshold = 15; // Only moves more than this pixels in one direction triggers
   auto pos = e->pos();
-  if(!mIsOnDirtyAction)
-    return; // Nothing needed to calculate
-  f64 dx = pos.x() - mMouseDownPos.x(),
-      dy = pos.y() - mMouseDownPos.y();
-  if(fabs(dx) * XtoYCoeff > fabs(dy))
-  { // Horizontal move
-    if(fabs(dx) < ActivateThreshold)
-      mDesiredOperation = AtPlace;
-    else
-      if(dx > 0) mDesiredOperation = MergeNext;
-      else mDesiredOperation = MergePrev;
+
+  if(e->pos().y() > height() - NleHeight)
+    return NleMouseMoveEvent(e);
+
+  switch(mDirtyActionType)
+  {
+    case DragBlock:
+    {
+      f64 dx = pos.x() - mMouseDownPos.x(),
+          dy = pos.y() - mMouseDownPos.y();
+      if(fabs(dx) * XtoYCoeff > fabs(dy))
+      { // Horizontal move
+        if(fabs(dx) < ActivateThreshold)
+          mDesiredDragOp = AtPlace;
+        else
+          if(dx > 0) mDesiredDragOp = MergeNext;
+          else mDesiredDragOp = MergePrev;
+      }
+      else
+      { // Vertical move
+        if(fabs(dy) < ActivateThreshold)
+          mDesiredDragOp = AtPlace;
+        else
+          if(dy > 0) mDesiredDragOp = SplitNext;
+          else mDesiredDragOp = SplitPrev;
+      }
+      update();
+      break;
+    }
+
+    case DragNleBlock:
+      break;
+
+    case DragNleTiming:
+      break;
+
+    case DblClkEditBlock:
+      break;
+
+    default: break;
   }
-  else
-  { // Vertical move
-    if(fabs(dy) < ActivateThreshold)
-      mDesiredOperation = AtPlace;
-    else
-      if(dy > 0) mDesiredOperation = SplitNext;
-      else mDesiredOperation = SplitPrev;
-  }
-  update();
 }
 
 void Reorganizer::mouseReleaseEvent(QMouseEvent *e)
 {
-  if(mDesiredOperation)
+
+  if(mDesiredDragOp)
   {
     CommitCurrentOperation();
+    mDesiredDragOp = NoDrag;
   }
   if(mCurrentOperatingLine >= 0)
   {
     mCurrentOperatingLine = -1;
     update();
   }
-  mIsOnDirtyAction = false;
+  // Only clear status for drag operations
+  if(mDirtyActionType < DblClkEditBlock)
+    SetDirtyAction(NoAction);
 }
 
 void Reorganizer::keyPressEvent(QKeyEvent *e)
 {
-
+  // FIXME: Doesn't work!
+  if(mDirtyActionType && e->key() == Qt::Key_Escape)
+  {
+    SetDirtyAction(NoAction);
+    update();
+  }
 }
 
 void Reorganizer::wheelEvent(QWheelEvent *e)
@@ -346,28 +461,66 @@ void Reorganizer::wheelEvent(QWheelEvent *e)
   ScrollPixelDelta(px);
 }
 
+void Reorganizer::resizeEvent(QResizeEvent *e)
+{
+  auto maxHoriz = std::max(mLongestLineWidth + ReservedSpace - e->size().width(), 0.0);
+  mBarHoriz->setMaximum(maxHoriz);
+  if(maxHoriz == 0.0)
+    mHorizScrollOffset = 0;
+  if(mDirtyActionType == DblClkEditBlock)
+    EditBlockTextInSitu_Placement(QPointF(mInSituEditorLeftMargin,
+                                          mInSituEditorOffCenterMargin +
+                                            (e->size().height() - NleHeight) / 2));
+}
+
+void Reorganizer::NleMousePressEvent(QMouseEvent *e)
+{
+
+}
+
+void Reorganizer::NleMouseMoveEvent(QMouseEvent *e)
+{
+
+}
+
+void Reorganizer::NleMouseReleaseEvent(QMouseEvent *e)
+{
+
+}
+
 void Reorganizer::Redo()
 {
   mUndo.redo();
+  UpdateExternals();
   update();
 }
 
 void Reorganizer::Undo()
 {
   mUndo.undo();
+  UpdateExternals();
   update();
 }
 
 void Reorganizer::ScrolledToEntry(int x)
 {
   mCurrentLine = x;
-  mInternScrollOffset = 0;
+  mVertScrollOffset = 0;
+  update();
+}
+
+void Reorganizer::ScrollHorizontal(int x)
+{
+  mHorizScrollOffset = x;
   update();
 }
 
 void Reorganizer::ScrollPixelDelta(int x)
 {
-  auto px = mInternScrollOffset + x;
+  if(mDirtyActionType != NoAction)
+    return;
+
+  auto px = mVertScrollOffset + x;
   if(px / LineHeight != 0)
   {
     auto nextline = BoundTo(mCurrentLine + px / LineHeight, 0, mModel.size());
@@ -375,8 +528,70 @@ void Reorganizer::ScrollPixelDelta(int x)
     mCurrentLine = nextline;
     update();
   }
-  mInternScrollOffset = px % LineHeight;
+  mVertScrollOffset = px % LineHeight;
 }
+
+//
+// == In situ Block Editing ==
+//
+
+void Reorganizer::EditBlockTextInSitu_Start(QPointF bottomLeft, QString text)
+{
+  EditBlockTextInSitu_Placement(bottomLeft);
+  mEdit->setVisible(true);
+  mEdit->setText(text);
+  mEdit->setSelection(0, text.size());
+  mEdit->setCursorPosition(text.size());
+}
+
+void Reorganizer::EditBlockTextInSitu_Abort()
+{
+  mEdit->setVisible(false);
+  SetDirtyAction(NoAction);
+  mInSituEditorLeftMargin = mInSituEditorOffCenterMargin = 0;
+}
+
+void Reorganizer::EditBlockTextInSitu_Commit()
+{
+  mEdit->setVisible(false);
+  QMessageBox::information(nullptr, "", mEdit->text());
+  SetDirtyAction(NoAction);
+  mInSituEditorLeftMargin = mInSituEditorOffCenterMargin = 0;
+}
+
+//
+// == Status Setters ==
+//
+
+void Reorganizer::SetDirtyAction(DirtyActionType t)
+{
+  mDirtyActionType = t;
+  if(t != NoAction)
+  {
+    mBarHoriz->setDisabled(true);
+    mBarVert->setDisabled(true);
+    mBarNleHoriz->setDisabled(true);
+  }
+  else
+  {
+    mBarHoriz->setDisabled(false);
+    mBarVert->setDisabled(false);
+    mBarNleHoriz->setDisabled(false);
+  }
+}
+
+void Reorganizer::SetCurrentActiveLine(int x)
+{
+  mCurrentActiveLine = x;
+  // Set timecode button text
+  mBtnBegin->setText(MStoTC(mModel[mCurrentActiveLine].begin));
+  mBtnEnd->setText(MStoTC(mModel[mCurrentActiveLine].end()));
+  // TODO: Zoom in on NLE
+}
+
+//
+// == Model Editing ==
+//
 
 Status Reorganizer::AppendToModel(u64 begin, u64 end, QString dialog)
 {
@@ -390,7 +605,8 @@ Status Reorganizer::AppendToModel(u64 begin, u64 end, QString dialog)
                          .begin = begin,
                          .duration = end - begin,
                          .words = SplitDialogByDelim(dialog) });
-  UpdateExternals();
+  mModel.back().UpdatedWidth();
+  UpdateExternals(false);
   return Success;
 }
 
@@ -401,14 +617,18 @@ Status Reorganizer::AddToModel(u64 begin, u64 end, QString dialog)
 
 Status Reorganizer::CommitCurrentOperation()
 {
-  if(mCurrentOperatingLine < 0 || mDesiredOperation == AtPlace)
+  if(mCurrentOperatingLine < 0 || mDesiredDragOp == AtPlace)
     return FailNoAction;
   if(mCurrentOperatingLine > mModel.size())
     return FailInvalidOp;
-  switch(mDesiredOperation)
+  switch(mDesiredDragOp)
   {
     case MergePrev:
-      if(mCurrentOperatingLine == 0) return FailNoTarget; // Can't do it
+      if(mCurrentOperatingLine == 0)
+      {
+        emit SendNotify(tr("Can't merge to previous line, because this is already first line!"), 1);
+        return FailNoTarget; // Can't do it
+      }
       mUndo.push(new LRCmd::MergeToPrevLine(mModel,
                                             mCurrentOperatingLine,
                                             mCurrentOperatingWord,
@@ -417,7 +637,11 @@ Status Reorganizer::CommitCurrentOperation()
       break;
 
     case MergeNext:
-      if(mCurrentOperatingLine == mModel.size() - 1) return FailNoTarget; // Can't do
+      if(mCurrentOperatingLine == mModel.size() - 1)
+      {
+        emit SendNotify(tr("Can't merge to next line, because this is already last line!"), 1);
+        return FailNoTarget; // Can't do
+      }
       mUndo.push(new LRCmd::MergeToNextLine(mModel,
                                             mCurrentOperatingLine,
                                             mCurrentOperatingWord,
@@ -425,17 +649,21 @@ Status Reorganizer::CommitCurrentOperation()
       break;
 
     case SplitPrev:
-
+      // TODO
       break;
 
     case SplitNext:
-      if(mCurrentOperatingWord == 0) return FailNoTarget;
+      if(mCurrentOperatingWord == 0)
+      {
+        emit SendNotify(tr("Can't split to next line from the first word!"), 1);
+        return FailNoTarget;
+      }
       mUndo.push(new LRCmd::SplitToNextLine(mModel,
                                             mCurrentOperatingLine,
                                             mCurrentOperatingWord));
       break;
 
-    case None:
+    case NoDrag:
     case AtPlace: return FailNoTarget;
   }
 
@@ -449,7 +677,41 @@ void Reorganizer::UpdateExternals(bool force)
   if(mDoUpdateScrollBarOnChange || force)
   {
     mBarVert->setRange(0, mModel.size() - 1);
+
+    // Little room for improvements, honestly, otherwise just do verification in paintEvent
+    f64 maxWidth = 0.0;
+    for(auto &i : mModel)
+      if(i.width > maxWidth)
+        maxWidth = i.width;
+
+    mBarHoriz->setMaximum(std::max(maxWidth + ReservedSpace - width(), 0.0));
+    mLongestLineWidth = maxWidth;
   }
+}
+
+void Reorganizer::EditBlockTextInSitu_Placement(QPointF bottomLeft)
+{
+  if(mInSituEditorLeftMargin == 0.0)
+  {
+    // Only update these values when initiating editor, do not overwrite when resize event occurs
+    mInSituEditorLeftMargin = bottomLeft.x();
+    mInSituEditorOffCenterMargin = bottomLeft.y() - (height() - NleHeight) / 2;
+  }
+
+  // Sanitize display position
+    auto h_w = mEdit->height();
+    // Y
+    if(bottomLeft.y() + h_w > height() - NleHeight)
+      bottomLeft.ry() -= LineHeight + h_w;
+    else if(bottomLeft.y() < 0)
+      bottomLeft.setY(0);
+    // X
+    if(bottomLeft.x() < ReservedSpace)
+      bottomLeft.setX(ReservedSpace);
+    else if(bottomLeft.x() + LineEditorWidth > width())
+      bottomLeft.setX(width() - LineEditorWidth);
+
+  mEdit->setGeometry(bottomLeft.x(), bottomLeft.y(), LineEditorWidth, h_w);
 }
 
 QVector<DiscreteWord> Reorganizer::SplitDialogByDelim(QString dialog, QString delims)

@@ -17,11 +17,18 @@ MainWindow::~MainWindow()
 
 void MainWindow::InitUi()
 {
-  ui->reorg->SetScrollBars(ui->barHoriz, ui->barVert);
+  ui->reorg->SetScrollBars(ui->barHoriz, ui->barVert, ui->barNleEdit);
+  ui->reorg->SetTimecodeEditBtns(ui->btnBeginTime, ui->btnEndTime);
   connect(ui->actUndo, &QAction::triggered,
           ui->reorg, &Reorganizer::Undo);
   connect(ui->actRedo, &QAction::triggered,
           ui->reorg, &Reorganizer::Redo);
+
+  // Customized Widgets
+  mNotif = new StatusNotify;
+  ui->statusbar->addWidget(mNotif);
+  connect(ui->reorg, &Reorganizer::SendNotify,
+          mNotif, &StatusNotify::Activate);
 }
 
 void MainWindow::on_btnOpenSrt_clicked()

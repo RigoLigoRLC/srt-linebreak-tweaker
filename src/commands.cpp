@@ -42,6 +42,8 @@ void LRCmd::MergeToPrevLine::undo()
 
   curr.words.last().delim = mDelimMovedTail;
   prev.words.last().delim = '\0';
+  curr.UpdatedWidth();
+  prev.UpdatedWidth();
 }
 
 void LRCmd::MergeToPrevLine::redo()
@@ -64,6 +66,7 @@ void LRCmd::MergeToPrevLine::redo()
   if(curr.words.size() == 0)
   {
     prev.duration += curr.duration;
+    prev.UpdatedWidth();
     mModel.removeAt(mDialog);
     mCurrDestroyed = true;
   }
@@ -73,6 +76,8 @@ void LRCmd::MergeToPrevLine::redo()
     curr.begin += timeDelta;
     curr.duration -= timeDelta;
     prev.duration += timeDelta;
+    curr.UpdatedWidth();
+    prev.UpdatedWidth();
   }
 }
 
@@ -106,7 +111,7 @@ void LRCmd::MergeToNextLine::undo()
   next.duration = mNextDuration;
   curr.duration = mCurrDuration;
 
-  curr.words.last().delim = mDelimMovedTail;
+//  curr.words.last().delim = mDelimMovedTail;
 
   for(int i = 0; i < mMoveCount; i++)
   {
@@ -115,6 +120,8 @@ void LRCmd::MergeToNextLine::undo()
   }
 
   curr.words.last().delim = '\0';
+  curr.UpdatedWidth();
+  next.UpdatedWidth();
 }
 
 void LRCmd::MergeToNextLine::redo()
@@ -134,22 +141,25 @@ void LRCmd::MergeToNextLine::redo()
     curr.words.removeAt(mWord);
   }
 
-  mDelimMovedTail = curr.words.last().delim;
-  curr.words.last().delim = '\0';
-
   if(mWord == 0)
   {
     next.duration += curr.duration;
     next.begin -= curr.duration;
     mModel.removeAt(mDialog);
     mCurrDestroyed = true;
+    next.UpdatedWidth();
   }
   else
   {
+    mDelimMovedTail = curr.words.last().delim;
+    curr.words.last().delim = '\0';
+
     u64 timeDelta = ((f64)currSize - mWord) / currSize * curr.duration;
     curr.duration -= timeDelta;
     next.begin -= timeDelta;
     next.duration += timeDelta;
+    curr.UpdatedWidth();
+    next.UpdatedWidth();
   }
 }
 
@@ -173,6 +183,7 @@ void LRCmd::SplitToNextLine::undo()
 
   currwords.append(nextwords);
   curr.duration = mCurrDuration;
+  curr.UpdatedWidth();
   mModel.removeAt(mDialog + 1);
 }
 
@@ -190,6 +201,7 @@ void LRCmd::SplitToNextLine::redo()
     .begin = curr.end(),
     .duration = timeDelta
   };
+  newdialog.UpdatedWidth();
 
   auto &newwords = newdialog.words;
 
@@ -200,4 +212,5 @@ void LRCmd::SplitToNextLine::redo()
   }
 
   mModel.insert(mDialog + 1, newdialog);
+  curr.UpdatedWidth();
 }

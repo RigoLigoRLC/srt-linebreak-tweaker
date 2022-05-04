@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include "statusnotify.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -25,5 +26,6 @@ class MainWindow : public QMainWindow
 
   private:
     Ui::MainWindow *ui;
+    StatusNotify *mNotif;
 };
 #endif // MAINWINDOW_H

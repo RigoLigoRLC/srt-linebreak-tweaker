@@ -28,14 +28,15 @@ set(PROJECT_SOURCES
         src/rint.h
         src/common.h
 
-        src/util.h
-        src/util.cpp
+        src/util.h src/util.cpp
 
-        src/reorganizer.h
-        src/reorganizer.cpp
+        src/wavdecoder.h src/wavdecoder.cpp
 
-        src/commands.h
-        src/commands.cpp
+        src/reorganizer.h src/reorganizer.cpp
+
+        src/statusnotify.h src/statusnotify.cpp
+
+        src/commands.h src/commands.cpp
 
         ${TS_FILES}
 )
@@ -67,7 +68,8 @@ else()
     qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 endif()
 
-target_link_libraries(linebreak_reorganizer PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_link_libraries(linebreak_reorganizer PRIVATE
+    Qt${QT_VERSION_MAJOR}::Widgets)
 
 set_target_properties(linebreak_reorganizer PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER my.example.com
