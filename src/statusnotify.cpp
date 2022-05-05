@@ -38,7 +38,7 @@ void StatusNotify::Activate(QString str, int severity)
   {
     {154, 167, 214},
     {243, 191, 81},
-    {158, 62, 48},
+    {255, 110, 110},
   };
   if(severity < 0) severity = 0;
   if(severity > 2) severity = 2;

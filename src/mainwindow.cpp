@@ -15,6 +15,11 @@ MainWindow::~MainWindow()
   delete ui;
 }
 
+void MainWindow::closeEvent(QCloseEvent *e)
+{
+
+}
+
 void MainWindow::InitUi()
 {
   ui->reorg->SetScrollBars(ui->barHoriz, ui->barVert, ui->barNleEdit);
@@ -48,5 +53,15 @@ void MainWindow::on_btnSaveSrt_clicked()
                                         qApp->applicationDirPath(),
                                         tr("SRT file (*.srt);;All files (*.*)"));
   ui->reorg->SaveFile(f);
+}
+
+
+void MainWindow::on_btnLoadWav_clicked()
+{
+  auto f = QFileDialog::getOpenFileName(this,
+                                        tr("Open WAV file"),
+                                        qApp->applicationDirPath(),
+                                        tr("Wave file (*.wav);;All files (*.*)"));
+  ui->reorg->OpenWave(f);
 }
 

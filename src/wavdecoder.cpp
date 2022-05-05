@@ -170,9 +170,11 @@ typedef struct SWavData {
 //-------------------------------------------------------
 
 
-bool WavDecoder::cacheAll()
+bool WavDecoder::cacheAll(QIODevice *_dev)
 {
     bool result = false;
+
+    dev = _dev;
 
     if (dev->bytesAvailable() > 0)
     {

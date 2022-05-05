@@ -18,7 +18,8 @@ Reorganizer::Reorganizer(QWidget *parent) :
   QWidget(parent),
   mDispFont("sansserif", 9),
   mDispFontMet(mDispFont),
-  mMouseDownPos()
+  mMouseDownPos(),
+  mWav(this)
 {
   mCurrentActiveLine = mCurrentLongestLine = mCurrentLine = mCurrentOperatingLine = -1;
   mLongestLineWidth = 0.0;
@@ -63,7 +64,7 @@ void Reorganizer::OpenFile(QString name)
   f.open(QFile::ReadOnly);
   if(f.error())
   {
-    QMessageBox::critical(this, tr("Cannot open SRT"), tr("Error: %1").arg(f.errorString()));
+    emit SendNotify(tr("Cannot open SRT file. Error: %1").arg(f.errorString()), 2);
     return;
   }
   // Clear everything
@@ -120,7 +121,7 @@ void Reorganizer::SaveFile(QString name)
   f.open(QFile::WriteOnly);
   if(f.error())
   {
-    QMessageBox::critical(this, tr("Cannot open SRT"), tr("Error: %1").arg(f.errorString()));
+    emit SendNotify(tr("Cannot save SRT file. Error: %1").arg(f.errorString()), 2);
     return;
   }
   QTextStream ts(&f);
@@ -139,6 +140,27 @@ void Reorganizer::SaveFile(QString name)
     }
     ts << '\n';
     count++;
+  }
+}
+
+void Reorganizer::OpenWave(QString name)
+{
+  QFile f(name);
+  f.open(QFile::ReadOnly);
+  if(f.error())
+  {
+    emit SendNotify(tr("Cannot open WAV file. Error: %1").arg(f.errorString()), 2);
+    return;
+  }
+
+  if(mWav.cacheAll(&f))
+  {
+    emit SendNotify(tr("WAV file successfully loaded."), 0);
+  }
+  else
+  {
+    QMessageBox::critical(this, tr("Cannot open WAV"), tr("WAV file unrecognized"));
+    return;
   }
 }
 
@@ -171,132 +193,144 @@ void Reorganizer::paintEvent(QPaintEvent *e)
   //  ====== List editor area ======
   //
 
-  QPen p1 { Qt::black },
-       pt { FgText },
-       pt2 { FgGreyText };
-  QBrush b1 { BgTile, Qt::SolidPattern },
-         b2 { BgEmpty, Qt::SolidPattern },
-         ba { FgText, Qt::Dense5Pattern };
-
-  p.setFont(mDispFont);
-  p.setClipRect(QRectF(0, 0, w, h_list)); // Clip at list area first
-
-  qreal fromTop = verticalOffset, top;
-
-  if(fromLines < 0)
+  if(mUpdateArea | ListArea)
   {
-    fromTop += -fromLines * LineHeight;
-    fromLines = 0;
-  }
-  top = fromTop;
+    mUpdateArea &= ~ListArea;
 
-  // The shadow of Current Active Line
-  p.setBrush(ba);
-  p.drawRect(QRectF(0, (mCurrentActiveLine - fromLines) * LineHeight +
-                       (fromLines ? verticalOffset : top),
-                    w, LineHeight));
-  for(i32 i = fromLines; i <= toLines; i++)
-  {
-    auto &entry = mModel[i];
+    QPen p1 { Qt::black },
+    pt { FgText },
+    pt2 { FgGreyText };
+    QBrush b1 { BgTile, Qt::SolidPattern },
+    b2 { BgEmpty, Qt::SolidPattern },
+    ba { FgText, Qt::Dense5Pattern };
+
+    p.setFont(mDispFont);
+    p.setClipRect(QRectF(0, 0, w, h_list)); // Clip at list area first
+
+    qreal fromTop = verticalOffset, top;
+
+    if(fromLines < 0)
     {
-      p.setBrush(b1); // Light brush
-      // All the text blocks
-      f64 left = ReservedSpace - mHorizScrollOffset;
-      for(auto &i : entry.words)
+      fromTop += -fromLines * LineHeight;
+      fromLines = 0;
+    }
+    top = fromTop;
+
+    // The shadow of Current Active Line
+    p.setBrush(ba);
+    p.drawRect(QRectF(0, (mCurrentActiveLine - fromLines) * LineHeight +
+                      (fromLines ? verticalOffset : top),
+                      w, LineHeight));
+    for(i32 i = fromLines; i <= toLines; i++)
+    {
+      auto &entry = mModel[i];
       {
-        // Only draw visible blocks
-        if(left + i._cachedBlockWidthPx > ReservedSpace)
+        p.setBrush(b1); // Light brush
+        // All the text blocks
+        f64 left = ReservedSpace - mHorizScrollOffset;
+        for(auto &i : entry.words)
         {
-          QRectF currWordRect = QRectF(left, top, i._cachedBlockWidthPx, LineHeight);
-          p.drawRect(currWordRect);
-          currWordRect.adjust(HorizMargin, 0, 0, 0);
-          p.drawText(currWordRect,
-                     Qt::AlignLeft | Qt::AlignVCenter,
-                     i.text);
+          // Only draw visible blocks
+          if(left + i._cachedBlockWidthPx > ReservedSpace)
+          {
+            QRectF currWordRect = QRectF(left, top, i._cachedBlockWidthPx, LineHeight);
+            p.drawRect(currWordRect);
+            currWordRect.adjust(HorizMargin, 0, 0, 0);
+            p.drawText(currWordRect,
+                       Qt::AlignLeft | Qt::AlignVCenter,
+                       i.text);
+          }
+
+          left += i._cachedBlockWidthPx;
         }
 
-        left += i._cachedBlockWidthPx;
-      }
+        // Reserved space, timestamp etc
+        p.setPen(p1);
+        p.setBrush(b2); // Dark color
+        p.setPen(pt);
+        p.drawRect(QRectF(EmptyLengthWidth, top, ReservedSpace - EmptyLengthWidth, LineHeight));
 
-      // Reserved space, timestamp etc
-      p.setPen(p1);
-      p.setBrush(b2); // Dark color
-      p.setPen(pt);
-      p.drawRect(QRectF(EmptyLengthWidth, top, ReservedSpace - EmptyLengthWidth, LineHeight));
-
-      if(entry.begin != lastEnd) // Has empty space between current dialog and last dialog
-      {
-        p.drawPolygon(QVector<QPointF>{{0, top - LineHeight / 2},
-                                       {EmptyLengthWidth - 8, top - LineHeight / 2},
-                                       {EmptyLengthWidth, top},
-                                       {EmptyLengthWidth - 8, top + LineHeight / 2},
-                                       {0, top + LineHeight / 2}});
-        p.drawText(QRectF(0, top - LineHeight / 2, EmptyLengthWidth - 8, LineHeight),
+        if(entry.begin != lastEnd) // Has empty space between current dialog and last dialog
+        {
+          p.drawPolygon(QVector<QPointF>{{0, top - LineHeight / 2},
+                                         {EmptyLengthWidth - 8, top - LineHeight / 2},
+                                         {EmptyLengthWidth, top},
+                                         {EmptyLengthWidth - 8, top + LineHeight / 2},
+                                         {0, top + LineHeight / 2}});
+          p.drawText(QRectF(0, top - LineHeight / 2, EmptyLengthWidth - 8, LineHeight),
+                     Qt::AlignRight | Qt::AlignVCenter,
+                     QString::number((entry.begin - lastEnd) / 1000.0)); // Empty space
+        }
+        p.drawText(QRectF(EmptyLengthWidth, top, TimeWidth - HorizMargin, LineHeight),
                    Qt::AlignRight | Qt::AlignVCenter,
-                   QString::number((entry.begin - lastEnd) / 1000.0)); // Empty space
+                   MStoTC(entry.begin)); // From
+        p.drawText(QRectF(EmptyLengthWidth + TimeWidth + HorizMargin, top,
+                          TimeWidth - HorizMargin, LineHeight),
+                   Qt::AlignLeft | Qt::AlignVCenter,
+                   MStoTC(entry.end())); // To
+        p.drawText(QRectF(ReservedSpace - DurationWidth, top, DurationWidth - HorizMargin, LineHeight),
+                   Qt::AlignRight | Qt::AlignVCenter,
+                   QString::number(entry.duration / 1000.0)); // Duration
+        lastEnd = entry.end();
       }
-      p.drawText(QRectF(EmptyLengthWidth, top, TimeWidth - HorizMargin, LineHeight),
-                 Qt::AlignRight | Qt::AlignVCenter,
-                 MStoTC(entry.begin)); // From
-      p.drawText(QRectF(EmptyLengthWidth + TimeWidth + HorizMargin, top,
-                        TimeWidth - HorizMargin, LineHeight),
-                 Qt::AlignLeft | Qt::AlignVCenter,
-                 MStoTC(entry.end())); // To
-      p.drawText(QRectF(ReservedSpace - DurationWidth, top, DurationWidth - HorizMargin, LineHeight),
-                 Qt::AlignRight | Qt::AlignVCenter,
-                 QString::number(entry.duration / 1000.0)); // Duration
-      lastEnd = entry.end();
+      top += LineHeight;
     }
-    top += LineHeight;
+
+    // Division lines
+    p.drawLine(QPointF(TimeWidth + EmptyLengthWidth, 0),
+               QPointF(TimeWidth + EmptyLengthWidth, h_list));
+    p.drawLine(QPointF(2 * TimeWidth + EmptyLengthWidth, 0),
+               QPointF(2 * TimeWidth + EmptyLengthWidth, h_list));
+
+    // Process the currently operating line
+    if(mCurrentOperatingLine >= 0)
+    {
+      f64 opTop = fromTop + (mCurrentOperatingLine - fromLines) * LineHeight,
+          opLeft = ReservedSpace;
+      QBrush bw { Qt::white, Qt::SolidPattern };
+      p.setBrush(bw);
+      p.setCompositionMode(QPainter::CompositionMode_Difference);
+      QRectF fillArea;
+      auto &opWords = mModel[mCurrentOperatingLine].words;
+      if(mDesiredDragOp == AtPlace) // Go nowhere
+      {
+        p.setClipRect(QRectF(ReservedSpace, 0, w - ReservedSpace, h_list)); // Clip at visible list area
+        for(int i = 0; i < mCurrentOperatingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
+        opLeft -= mHorizScrollOffset;
+        p.drawRect(QRectF(opLeft, opTop, opWords[mCurrentOperatingWord]._cachedBlockWidthPx, LineHeight));
+      }
+      else if(mDesiredDragOp == MergeNext || mDesiredDragOp == SplitNext) // To right
+      {
+        p.setClipRect(QRectF(ReservedSpace, 0, w - ReservedSpace, h_list)); // Clip at visible list area
+        for(int i = 0; i < mCurrentOperatingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
+        opLeft -= mHorizScrollOffset;
+        p.drawRect(QRectF(opLeft, opTop, w - opLeft, LineHeight));
+      }
+      else // To left
+      {
+        // Do not clip, let the inverse color fill through the left border
+        f64 opW = ReservedSpace;
+        for(int i = 0; i <= mCurrentOperatingWord; i++) opW += opWords[i]._cachedBlockWidthPx;
+        p.drawRect(QRectF(0, opTop, opW - mHorizScrollOffset, LineHeight));
+      }
+      // Draw activate threshold
+      p.drawEllipse(mMouseDownPos, ActivateThreshold, ActivateThreshold);
+    }
+
+    p.setPen(p1);
+    p.setCompositionMode(QPainter::CompositionMode::CompositionMode_SourceOver);
   }
-
-  // Division lines
-  p.drawLine(QPointF(TimeWidth + EmptyLengthWidth, 0),
-             QPointF(TimeWidth + EmptyLengthWidth, h_list));
-  p.drawLine(QPointF(2 * TimeWidth + EmptyLengthWidth, 0),
-             QPointF(2 * TimeWidth + EmptyLengthWidth, h_list));
-
-  // Process the currently operating line
-  if(mCurrentOperatingLine >= 0)
-  {
-    f64 opTop = fromTop + (mCurrentOperatingLine - fromLines) * LineHeight,
-        opLeft = ReservedSpace;
-    QBrush bw { Qt::white, Qt::SolidPattern };
-    p.setBrush(bw);
-    p.setCompositionMode(QPainter::CompositionMode_Difference);
-    QRectF fillArea;
-    auto &opWords = mModel[mCurrentOperatingLine].words;
-    if(mDesiredDragOp == AtPlace) // Go nowhere
-    {
-      p.setClipRect(QRectF(ReservedSpace, 0, w - ReservedSpace, h_list)); // Clip at visible list area
-      for(int i = 0; i < mCurrentOperatingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
-      opLeft -= mHorizScrollOffset;
-      p.drawRect(QRectF(opLeft, opTop, opWords[mCurrentOperatingWord]._cachedBlockWidthPx, LineHeight));
-    }
-    else if(mDesiredDragOp == MergeNext || mDesiredDragOp == SplitNext) // To right
-    {
-      p.setClipRect(QRectF(ReservedSpace, 0, w - ReservedSpace, h_list)); // Clip at visible list area
-      for(int i = 0; i < mCurrentOperatingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
-      opLeft -= mHorizScrollOffset;
-      p.drawRect(QRectF(opLeft, opTop, w - opLeft, LineHeight));
-    }
-    else // To left
-    {
-      // Do not clip, let the inverse color fill through the left border
-      f64 opW = ReservedSpace;
-      for(int i = 0; i <= mCurrentOperatingWord; i++) opW += opWords[i]._cachedBlockWidthPx;
-      p.drawRect(QRectF(0, opTop, opW - mHorizScrollOffset, LineHeight));
-    }
-    // Draw activate threshold
-    p.drawEllipse(mMouseDownPos, ActivateThreshold, ActivateThreshold);
-  }
-
-  p.setPen(p1);
-  p.setCompositionMode(QPainter::CompositionMode::CompositionMode_SourceOver);
 
   //
   // ====== NLE editor area ======
   //
+
+  if(mUpdateArea | NleArea)
+  {
+    mUpdateArea &= ~NleArea;
+
+
+  }
 
   p.end();
 }
@@ -313,7 +347,7 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
   if(e->pos().y() > h)
     return NleMousePressEvent(e);
 
-  SetCurrentActiveLine(mCurrentLine + (deltaY + Sign(deltaY) * LineHeight / 2) / LineHeight);
+  mCurrentActiveLine = mCurrentLine + (deltaY + Sign(deltaY) * LineHeight / 2) / LineHeight;
   if(mCurrentActiveLine < 0 || mCurrentActiveLine >= mModel.size()) // Line invalid
   {
     SetCurrentActiveLine(-1);
@@ -321,7 +355,7 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
   else
   {
     // Clicking on a valid line, update current active line
-    mCurrentOperatingLine = mCurrentActiveLine;
+   SetCurrentActiveLine(mCurrentOperatingLine = mCurrentActiveLine);
 
     // Figure out the word currently under the mouse
     auto &opLine = mModel[mCurrentOperatingLine];
@@ -336,7 +370,7 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
         if(endPos > realX)
         {
           mCurrentOperatingWord = i;
-          update();
+          UpdateListArea();
           break;
         }
       }
@@ -410,7 +444,7 @@ void Reorganizer::mouseMoveEvent(QMouseEvent *e)
           if(dy > 0) mDesiredDragOp = SplitNext;
           else mDesiredDragOp = SplitPrev;
       }
-      update();
+      UpdateListArea();
       break;
     }
 
@@ -438,7 +472,7 @@ void Reorganizer::mouseReleaseEvent(QMouseEvent *e)
   if(mCurrentOperatingLine >= 0)
   {
     mCurrentOperatingLine = -1;
-    update();
+    UpdateListArea();
   }
   // Only clear status for drag operations
   if(mDirtyActionType < DblClkEditBlock)
@@ -451,7 +485,7 @@ void Reorganizer::keyPressEvent(QKeyEvent *e)
   if(mDirtyActionType && e->key() == Qt::Key_Escape)
   {
     SetDirtyAction(NoAction);
-    update();
+    UpdateListArea();
   }
 }
 
@@ -492,27 +526,27 @@ void Reorganizer::Redo()
 {
   mUndo.redo();
   UpdateExternals();
-  update();
+  UpdateListArea();
 }
 
 void Reorganizer::Undo()
 {
   mUndo.undo();
   UpdateExternals();
-  update();
+  UpdateListArea();
 }
 
 void Reorganizer::ScrolledToEntry(int x)
 {
   mCurrentLine = x;
   mVertScrollOffset = 0;
-  update();
+  UpdateListArea();
 }
 
 void Reorganizer::ScrollHorizontal(int x)
 {
   mHorizScrollOffset = x;
-  update();
+  UpdateListArea();
 }
 
 void Reorganizer::ScrollPixelDelta(int x)
@@ -526,7 +560,7 @@ void Reorganizer::ScrollPixelDelta(int x)
     auto nextline = BoundTo(mCurrentLine + px / LineHeight, 0, mModel.size());
     mBarVert->setValue(nextline);
     mCurrentLine = nextline;
-    update();
+    UpdateListArea();
   }
   mVertScrollOffset = px % LineHeight;
 }
@@ -583,6 +617,7 @@ void Reorganizer::SetDirtyAction(DirtyActionType t)
 void Reorganizer::SetCurrentActiveLine(int x)
 {
   mCurrentActiveLine = x;
+  if(x < 0) return;
   // Set timecode button text
   mBtnBegin->setText(MStoTC(mModel[mCurrentActiveLine].begin));
   mBtnEnd->setText(MStoTC(mModel[mCurrentActiveLine].end()));
@@ -670,6 +705,24 @@ Status Reorganizer::CommitCurrentOperation()
 
   UpdateExternals();
   return Success;
+}
+
+void Reorganizer::UpdateListArea()
+{
+  mUpdateArea |= ListArea;
+  update();
+}
+
+void Reorganizer::UpdateNLEArea()
+{
+  mUpdateArea |= NleArea;
+  update();
+}
+
+void Reorganizer::UpdateAll()
+{
+  mUpdateArea = ListArea | NleArea;
+  update();
 }
 
 void Reorganizer::UpdateExternals(bool force)

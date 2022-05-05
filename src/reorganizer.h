@@ -13,6 +13,7 @@
 #include <QTime>
 #include <rint.h>
 #include <common.h>
+#include <wavdecoder.h>
 
 struct Dialog;
 struct DiscreteWord;
@@ -28,6 +29,7 @@ class Reorganizer : public QWidget
 
     void OpenFile(QString name);
     void SaveFile(QString name);
+    void OpenWave(QString name);
 
   protected:
     virtual void paintEvent(QPaintEvent* e) override;
@@ -68,6 +70,10 @@ class Reorganizer : public QWidget
 
     Status CommitCurrentOperation();
 
+    void UpdateListArea();
+    void UpdateNLEArea();
+    void UpdateAll();
+
     /// @param affectLongest Whether the conducted operation could possibly shorten
     ///        the longest line marked in mCurrentLongestLine.
     void UpdateExternals(bool force = false);
@@ -80,6 +86,7 @@ class Reorganizer : public QWidget
   private: // Properties
     // Model
     QVector<Dialog> mModel;
+    WavDecoder mWav;
 
     // Status
     bool mDoUpdateScrollBarOnChange, mExpectingDblClk;
@@ -91,6 +98,9 @@ class Reorganizer : public QWidget
     QPointF mMouseDownPos;
     QTime mMouseDownTime;
     enum { NoDrag = 0, AtPlace, MergeNext, MergePrev, SplitNext, SplitPrev } mDesiredDragOp;
+
+    enum UpdateAreaFlag { NoUpd = 0, ListArea = 1, NleArea = 2 };
+    i32 mUpdateArea;
 
     QUndoStack mUndo;
 

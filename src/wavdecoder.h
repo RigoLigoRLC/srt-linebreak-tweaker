@@ -29,24 +29,22 @@ union uichar {
 class WavDecoder : public QBuffer
 {
     Q_OBJECT
-    friend class qtauWavCodecFactory;
 
 public:
 
     WavDecoder(QObject *parent);
 
     // should read all contents of file/socket and decode it to PCM in buf
-    virtual bool cacheAll();
+    virtual bool cacheAll(QIODevice *);
 
 protected:
     WavFormat fmt; // format of that raw PCM data
 
-protected:
-    QIODevice *dev;
-
     bool findFormatChunk(QDataStream &reader);
     bool findDataChunk(QDataStream &reader);
 
+protected:
+    QIODevice *dev;
     quint64 _data_chunk_location;  // bytes
     int     _data_chunk_length;    // in frames
 
