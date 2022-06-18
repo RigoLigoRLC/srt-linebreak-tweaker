@@ -63,6 +63,16 @@
         </property>
        </spacer>
       </item>
+      <item>
+       <widget class="QCheckBox" name="chkAutoZoomNle">
+        <property name="text">
+         <string>NLE Auto Zoom</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
      </layout>
     </item>
     <item>
@@ -161,7 +171,7 @@
      <x>0</x>
      <y>0</y>
      <width>1067</width>
-     <height>25</height>
+     <height>24</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuEdit">

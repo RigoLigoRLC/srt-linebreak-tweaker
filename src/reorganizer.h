@@ -43,6 +43,7 @@ class Reorganizer : public QWidget
     void NleMousePressEvent(QMouseEvent *e);
     void NleMouseMoveEvent(QMouseEvent *e);
     void NleMouseReleaseEvent(QMouseEvent *e);
+    void NleWheelEvent(QWheelEvent *e);
 
   public slots:
     void Redo();
@@ -52,6 +53,7 @@ class Reorganizer : public QWidget
     void ScrolledToEntry(int);
     void ScrollHorizontal(int);
     void ScrollPixelDelta(int);
+    void ScrollNleMovement(int);
 
     /// @param bottomLeft the bottom left point of the double clicked block
     void EditBlockTextInSitu_Start(QPointF bottomLeft, QString text);
@@ -64,18 +66,21 @@ class Reorganizer : public QWidget
     void SetDirtyAction(DirtyActionType);
     void SetCurrentActiveLine(int);
 
+    void SanitizeActiveSelection();
+
+    void NleShiftTimeMs(int, bool changeScrollBar = true);
+
     // Model interface
     Status AppendToModel(u64 begin, u64 end, QString dialog);
     Status AddToModel(u64 begin, u64 end, QString dialog);
 
     Status CommitCurrentOperation();
 
+    void UpdateTimecodeButtons();
     void UpdateListArea();
     void UpdateNLEArea();
     void UpdateAll();
 
-    /// @param affectLongest Whether the conducted operation could possibly shorten
-    ///        the longest line marked in mCurrentLongestLine.
     void UpdateExternals(bool force = false);
 
     void EditBlockTextInSitu_Placement(QPointF bottomLeft);
@@ -91,13 +96,16 @@ class Reorganizer : public QWidget
     // Status
     bool mDoUpdateScrollBarOnChange, mExpectingDblClk;
     DirtyActionType mDirtyActionType;
-    i32 mCurrentLine, mCurrentOperatingLine, mCurrentOperatingWord, mCurrentLongestLine,
+    i32 mCurrentLine, mCurrentOperatingLine, mCurrentEditingWord, mCurrentLongestLine,
         mCurrentActiveLine;
     f64 mLongestLineWidth;
     i32 mVertScrollOffset, mHorizScrollOffset;
     QPointF mMouseDownPos;
     QTime mMouseDownTime;
     enum { NoDrag = 0, AtPlace, MergeNext, MergePrev, SplitNext, SplitPrev } mDesiredDragOp;
+
+    // NLE Editor
+    i32 mNleRangeMsBegin, mNleRangeMsEnd, mNleMaximumLengthMs;
 
     enum UpdateAreaFlag { NoUpd = 0, ListArea = 1, NleArea = 2 };
     i32 mUpdateArea;
@@ -128,10 +136,12 @@ class Reorganizer : public QWidget
       LineEditorWidth = 250, // Fixed wdith for block editor QLineEdit *mEdit
 
       // NLE space
-      NleHeight = 200
+      NleHeight = 200,
+      WaveformHeight = 120
     ;
     static constexpr f64
       ScrollCoeff = -0.9,
+      NleScrollCoeff = 1, ///< NLE Scroll: Unit to Millisecond
       XtoYCoeff = 0.5, // Usage: if coeff * DeltaX > DeltaY then considers going sideways (merge)
       ActivateThreshold = 15; // Only moves more than this pixels in one direction triggers a merge/split
 

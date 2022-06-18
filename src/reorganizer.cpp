@@ -9,6 +9,7 @@
 
 #include <QDebug>
 
+#include <signal.h>
 #include <util.h>
 #include "commands.h"
 #include "reorganizer.h"
@@ -32,6 +33,8 @@ Reorganizer::Reorganizer(QWidget *parent) :
   mMouseDownTime = QTime::currentTime();
   mExpectingDblClk = false;
 
+  mNleRangeMsBegin = mNleRangeMsEnd = mNleMaximumLengthMs = 0;
+
   mEdit = new QLineEdit(this);
   mEdit->setFixedWidth(250);
   mEdit->setVisible(false); // Hidden by default
@@ -48,6 +51,8 @@ void Reorganizer::SetScrollBars(QScrollBar *horiz, QScrollBar *vert, QScrollBar 
           this, &Reorganizer::ScrolledToEntry);
   connect(horiz, &QScrollBar::sliderMoved,
           this, &Reorganizer::ScrollHorizontal);
+  connect(nleHoriz, &QScrollBar::valueChanged,
+          this, &Reorganizer::ScrollNleMovement);
 }
 
 void Reorganizer::SetTimecodeEditBtns(QPushButton *begin, QPushButton *end)
@@ -152,7 +157,7 @@ void Reorganizer::OpenWave(QString name)
     emit SendNotify(tr("Cannot open WAV file. Error: %1").arg(f.errorString()), 2);
     return;
   }
-
+  mWav.clear();
   if(mWav.cacheAll(&f))
   {
     emit SendNotify(tr("WAV file successfully loaded."), 0);
@@ -162,6 +167,9 @@ void Reorganizer::OpenWave(QString name)
     QMessageBox::critical(this, tr("Cannot open WAV"), tr("WAV file unrecognized"));
     return;
   }
+  mNleMaximumLengthMs = mWav.GetLengthMs();
+  mNleRangeMsEnd = std::min(10000, mNleMaximumLengthMs);
+  mBarNleHoriz->setMaximum(mNleMaximumLengthMs);
 }
 
 void Reorganizer::paintEvent(QPaintEvent *e)
@@ -173,9 +181,6 @@ void Reorganizer::paintEvent(QPaintEvent *e)
     DivLine = QColor(0, 0, 0),
     FgText = QColor(0, 0, 0),
     FgGreyText = QColor(100, 100, 100);
-
-  if(mModel.isEmpty())
-    return;
 
   QPainter p(this);
   i32 h = height(),
@@ -193,7 +198,7 @@ void Reorganizer::paintEvent(QPaintEvent *e)
   //  ====== List editor area ======
   //
 
-  if(mUpdateArea | ListArea)
+  if(mUpdateArea | ListArea && mModel.size())
   {
     mUpdateArea &= ~ListArea;
 
@@ -295,14 +300,14 @@ void Reorganizer::paintEvent(QPaintEvent *e)
       if(mDesiredDragOp == AtPlace) // Go nowhere
       {
         p.setClipRect(QRectF(ReservedSpace, 0, w - ReservedSpace, h_list)); // Clip at visible list area
-        for(int i = 0; i < mCurrentOperatingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
+        for(int i = 0; i < mCurrentEditingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
         opLeft -= mHorizScrollOffset;
-        p.drawRect(QRectF(opLeft, opTop, opWords[mCurrentOperatingWord]._cachedBlockWidthPx, LineHeight));
+        p.drawRect(QRectF(opLeft, opTop, opWords[mCurrentEditingWord]._cachedBlockWidthPx, LineHeight));
       }
       else if(mDesiredDragOp == MergeNext || mDesiredDragOp == SplitNext) // To right
       {
         p.setClipRect(QRectF(ReservedSpace, 0, w - ReservedSpace, h_list)); // Clip at visible list area
-        for(int i = 0; i < mCurrentOperatingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
+        for(int i = 0; i < mCurrentEditingWord; i++) opLeft += opWords[i]._cachedBlockWidthPx;
         opLeft -= mHorizScrollOffset;
         p.drawRect(QRectF(opLeft, opTop, w - opLeft, LineHeight));
       }
@@ -310,7 +315,7 @@ void Reorganizer::paintEvent(QPaintEvent *e)
       {
         // Do not clip, let the inverse color fill through the left border
         f64 opW = ReservedSpace;
-        for(int i = 0; i <= mCurrentOperatingWord; i++) opW += opWords[i]._cachedBlockWidthPx;
+        for(int i = 0; i <= mCurrentEditingWord; i++) opW += opWords[i]._cachedBlockWidthPx;
         p.drawRect(QRectF(0, opTop, opW - mHorizScrollOffset, LineHeight));
       }
       // Draw activate threshold
@@ -328,8 +333,48 @@ void Reorganizer::paintEvent(QPaintEvent *e)
   if(mUpdateArea | NleArea)
   {
     mUpdateArea &= ~NleArea;
+    p.translate(0, h_list); // Use relative coordinate of NLE editor
+    p.setClipping(false);
 
+    // Paint waveform
+    if(mNleRangeMsBegin < mNleRangeMsEnd)
+    {
+      f32 samplePerPx = (mNleRangeMsEnd - mNleRangeMsBegin) / 1000.0 * mWav.SampleRate() / w,
+          sampleBegin = mNleRangeMsBegin / 1000.0 * mWav.SampleRate(),
+          sampleEnd;
+      // Make sampleBegin always a multiply of samplePerPx
+      sampleBegin = floor(sampleBegin / samplePerPx) * samplePerPx;
+      sampleEnd = sampleBegin + samplePerPx;
+      qDebug() << sampleBegin << samplePerPx;
+      for(i32 i = 0; i < w; i++)
+      {
+        auto peaks = mWav.GetWaveformPeaksForRange(floor(sampleBegin), floor(sampleEnd));
+        p.drawLine(QPointF(i, WaveformHeight / 2 * (1 - peaks.first)  + NleHeight - WaveformHeight),
+                   QPointF(i, WaveformHeight / 2 * (1 - peaks.second) + NleHeight - WaveformHeight));
 
+        sampleBegin = sampleEnd;
+        sampleEnd += samplePerPx;
+      }
+
+      QLinearGradient lg(0, 0, 0, WaveformHeight);
+
+      lg.setColorAt(0.0, QColor(255,255,255,170));
+      lg.setColorAt(0.5, QColor(255,255,255,64));
+      lg.setColorAt(1.0, QColor(255,255,255,170));
+
+      p.setPen(Qt::NoPen);
+      p.setBrush(QBrush(lg));
+      p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+//      p.drawRect(QRectF(0, NleHeight - WaveformHeight, w, WaveformHeight));
+      // I don't know why the fuck this doesn't work so I had to use transform method to move
+      // the entire painting area.
+      // Please, Qt, how the fuck does the gradients' coordinates work? Isn't it just supposed to
+      // be gradient-ing in my painted area?
+      p.translate(0,   NleHeight - WaveformHeight);
+      p.drawRect(QRectF(0, 0, w, WaveformHeight));
+      p.translate(0, -(NleHeight - WaveformHeight));
+      p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    }
   }
 
   p.end();
@@ -355,13 +400,13 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
   else
   {
     // Clicking on a valid line, update current active line
-   SetCurrentActiveLine(mCurrentOperatingLine = mCurrentActiveLine);
+    SetCurrentActiveLine(mCurrentOperatingLine = mCurrentActiveLine);
 
     // Figure out the word currently under the mouse
     auto &opLine = mModel[mCurrentOperatingLine];
     auto &opWords = opLine.words;
     endPos = ReservedSpace;
-    mCurrentOperatingWord = opWords.size() - 1;
+    mCurrentEditingWord = opWords.size() - 1;
     if(opLine.type == Dialog::Real)
     {
       for(int i = 0; i < opWords.size(); i++)
@@ -369,7 +414,7 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
         endPos += opWords[i]._cachedBlockWidthPx;
         if(endPos > realX)
         {
-          mCurrentOperatingWord = i;
+          mCurrentEditingWord = i;
           UpdateListArea();
           break;
         }
@@ -388,13 +433,16 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
      mMouseDownTime.msecsTo(nowTime) < QApplication::doubleClickInterval() &&
      QLineF(mMouseDownPos, newPos).length() < qApp->styleHints()->mouseDoubleClickDistance())
   {
-    auto &opWords = mModel[mCurrentOperatingLine].words;
-    SetDirtyAction(DblClkEditBlock); // Identify as double click
-    EditBlockTextInSitu_Start(
-          QPointF(endPos - opWords[mCurrentOperatingWord]._cachedBlockWidthPx,
-                  h / 2 + (mCurrentActiveLine - mCurrentLine + 0.5) * LineHeight),
-          opWords[mCurrentOperatingWord].text);
-    mExpectingDblClk = false;
+    if(mCurrentOperatingLine >= 0)
+    {
+      auto &opWords = mModel[mCurrentOperatingLine].words;
+      SetDirtyAction(DblClkEditBlock); // Identify as double click
+      EditBlockTextInSitu_Start(
+            QPointF(endPos - opWords[mCurrentEditingWord]._cachedBlockWidthPx,
+                    h / 2 + (mCurrentActiveLine - mCurrentLine + 0.5) * LineHeight),
+            opWords[mCurrentEditingWord].text);
+      mExpectingDblClk = false;
+    }
   }
   else
   {
@@ -491,6 +539,8 @@ void Reorganizer::keyPressEvent(QKeyEvent *e)
 
 void Reorganizer::wheelEvent(QWheelEvent *e)
 {
+  if(e->position().y() > height() - NleHeight)
+    return NleWheelEvent(e);
   i32 px = e->angleDelta().y() * ScrollCoeff;
   ScrollPixelDelta(px);
 }
@@ -520,6 +570,14 @@ void Reorganizer::NleMouseMoveEvent(QMouseEvent *e)
 void Reorganizer::NleMouseReleaseEvent(QMouseEvent *e)
 {
 
+}
+
+void Reorganizer::NleWheelEvent(QWheelEvent *e)
+{
+  auto delta = e->angleDelta().x() * -NleScrollCoeff; // ms
+  NleShiftTimeMs(delta);
+
+  UpdateNLEArea();
 }
 
 void Reorganizer::Redo()
@@ -565,6 +623,14 @@ void Reorganizer::ScrollPixelDelta(int x)
   mVertScrollOffset = px % LineHeight;
 }
 
+void Reorganizer::ScrollNleMovement(int x)
+{
+  auto delta = x - mNleRangeMsBegin;
+  NleShiftTimeMs(delta, false);
+
+  UpdateNLEArea();
+}
+
 //
 // == In situ Block Editing ==
 //
@@ -588,8 +654,27 @@ void Reorganizer::EditBlockTextInSitu_Abort()
 void Reorganizer::EditBlockTextInSitu_Commit()
 {
   mEdit->setVisible(false);
-  QMessageBox::information(nullptr, "", mEdit->text());
+  auto delta = SplitDialogByDelim(mEdit->text());
+  switch(delta.size())
+  {
+    case 0:
+      mUndo.push(new LRCmd::RemoveWord(mModel, mCurrentActiveLine, mCurrentEditingWord));
+      break;
+
+    case 1:
+      mUndo.push(new LRCmd::ChangeWord(mModel, mCurrentActiveLine, mCurrentEditingWord, delta[0]));
+      break;
+
+    default:
+      mUndo.beginMacro(tr("Change word to multiple words"));
+      mUndo.push(new LRCmd::RemoveWord(mModel, mCurrentActiveLine, mCurrentEditingWord));
+      mUndo.push(new LRCmd::InsertWords(mModel, mCurrentActiveLine, mCurrentEditingWord, delta));
+      mUndo.endMacro();
+      break;
+  }
+
   SetDirtyAction(NoAction);
+  UpdateListArea();
   mInSituEditorLeftMargin = mInSituEditorOffCenterMargin = 0;
 }
 
@@ -618,10 +703,29 @@ void Reorganizer::SetCurrentActiveLine(int x)
 {
   mCurrentActiveLine = x;
   if(x < 0) return;
-  // Set timecode button text
-  mBtnBegin->setText(MStoTC(mModel[mCurrentActiveLine].begin));
-  mBtnEnd->setText(MStoTC(mModel[mCurrentActiveLine].end()));
+  UpdateTimecodeButtons();
   // TODO: Zoom in on NLE
+}
+
+void Reorganizer::SanitizeActiveSelection()
+{
+  if(mCurrentActiveLine < 0)
+    mCurrentActiveLine = 0;
+  else if(mCurrentActiveLine >= mModel.size())
+    mCurrentActiveLine = mModel.size() - 1;
+}
+
+void Reorganizer::NleShiftTimeMs(int ms, bool changeScrollBar)
+{
+  // Clamp
+  if(ms < 0)
+    ms = -std::min(-ms, mNleRangeMsBegin);
+  else if(ms > 0)
+    ms =  std::min( ms, mNleMaximumLengthMs - mNleRangeMsEnd);
+  mNleRangeMsBegin += ms;
+  mNleRangeMsEnd += ms;
+  if(changeScrollBar)
+    mBarNleHoriz->setValue(mBarNleHoriz->value() + ms);
 }
 
 //
@@ -666,7 +770,7 @@ Status Reorganizer::CommitCurrentOperation()
       }
       mUndo.push(new LRCmd::MergeToPrevLine(mModel,
                                             mCurrentOperatingLine,
-                                            mCurrentOperatingWord,
+                                            mCurrentEditingWord,
                                             mCurrentOperatingLine - 1));
       mCurrentOperatingLine--;
       break;
@@ -679,32 +783,47 @@ Status Reorganizer::CommitCurrentOperation()
       }
       mUndo.push(new LRCmd::MergeToNextLine(mModel,
                                             mCurrentOperatingLine,
-                                            mCurrentOperatingWord,
+                                            mCurrentEditingWord,
                                             mCurrentOperatingLine + 1));
       break;
 
     case SplitPrev:
-      // TODO
+      if(mCurrentEditingWord == mModel.size() - 1)
+      {
+          emit SendNotify(tr("Can't split to previous line from the last word!"), 1);
+          return FailNoTarget;
+      }
+      mUndo.push(new LRCmd::SplitToPrevLine(mModel,
+                                            mCurrentOperatingLine,
+                                            mCurrentEditingWord));
       break;
 
     case SplitNext:
-      if(mCurrentOperatingWord == 0)
+      if(mCurrentEditingWord == 0)
       {
         emit SendNotify(tr("Can't split to next line from the first word!"), 1);
         return FailNoTarget;
       }
       mUndo.push(new LRCmd::SplitToNextLine(mModel,
                                             mCurrentOperatingLine,
-                                            mCurrentOperatingWord));
+                                            mCurrentEditingWord));
       break;
 
     case NoDrag:
     case AtPlace: return FailNoTarget;
   }
 
-
+  SanitizeActiveSelection();
   UpdateExternals();
   return Success;
+}
+
+void Reorganizer::UpdateTimecodeButtons()
+{
+  // Set timecode button text
+  if(mCurrentActiveLine < 0) return;
+  mBtnBegin->setText(MStoTC(mModel[mCurrentActiveLine].begin));
+  mBtnEnd->setText(MStoTC(mModel[mCurrentActiveLine].end()));
 }
 
 void Reorganizer::UpdateListArea()
@@ -739,6 +858,7 @@ void Reorganizer::UpdateExternals(bool force)
 
     mBarHoriz->setMaximum(std::max(maxWidth + ReservedSpace - width(), 0.0));
     mLongestLineWidth = maxWidth;
+    UpdateTimecodeButtons();
   }
 }
 

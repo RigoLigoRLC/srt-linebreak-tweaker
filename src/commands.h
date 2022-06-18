@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include "reorganizer.h"
 #include <QUndoCommand>
 #include <QVector>
 #include <rint.h>
@@ -55,6 +56,46 @@ namespace LRCmd
     private:
       i32 mNextDialog;
       QChar mDelimMovedTail;
-      u64 mCurrDuration;
+  };
+
+  class SplitToPrevLine : public CmdBase
+  {
+    public:
+      SplitToPrevLine(DialogVec &model, i32 iDialog, i32 iWord);
+      void undo() override;
+      void redo() override;
+    private:
+      i32 mPrevDialog;
+      QChar mDelimMovedTail;
+  };
+
+  class ChangeWord : public CmdBase
+  {
+    public:
+      ChangeWord(DialogVec &model, i32 iDialog, i32 iWord, DiscreteWord &word);
+      void undo() override;
+      void redo() override;
+    private:
+      DiscreteWord mChangeWord, mOrigWord;
+  };
+
+  class InsertWords : public CmdBase
+  {
+    public:
+      InsertWords(DialogVec &model, i32 iDialog, i32 iWord, QVector<DiscreteWord> &insertion);
+      void undo() override;
+      void redo() override;
+    private:
+      QVector<DiscreteWord> mInsertedWords;
+  };
+
+  class RemoveWord : public CmdBase
+  {
+    public:
+      RemoveWord(DialogVec &model, i32 iDialog, i32 iWord);
+      void undo() override;
+      void redo() override;
+    private:
+      DiscreteWord mRemovedWord;
   };
 }

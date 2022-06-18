@@ -111,7 +111,7 @@ void LRCmd::MergeToNextLine::undo()
   next.duration = mNextDuration;
   curr.duration = mCurrDuration;
 
-//  curr.words.last().delim = mDelimMovedTail;
+  //  curr.words.last().delim = mDelimMovedTail;
 
   for(int i = 0; i < mMoveCount; i++)
   {
@@ -182,7 +182,7 @@ void LRCmd::SplitToNextLine::undo()
   auto &currwords = curr.words, &nextwords = next.words;
 
   currwords.append(nextwords);
-  curr.duration = mCurrDuration;
+  curr.duration += next.duration;
   curr.UpdatedWidth();
   mModel.removeAt(mDialog + 1);
 }
@@ -192,7 +192,6 @@ void LRCmd::SplitToNextLine::redo()
   auto &curr = mModel[mDialog];
   auto &currwords = curr.words;
   i32 currSize = currwords.size();
-  mCurrDuration = curr.duration;
 
   u64 timeDelta = ((f64)currSize - mWord) / currSize * curr.duration;
   curr.duration -= timeDelta;
@@ -201,7 +200,6 @@ void LRCmd::SplitToNextLine::redo()
     .begin = curr.end(),
     .duration = timeDelta
   };
-  newdialog.UpdatedWidth();
 
   auto &newwords = newdialog.words;
 
@@ -210,7 +208,163 @@ void LRCmd::SplitToNextLine::redo()
     newwords.append(currwords[mWord]);
     currwords.removeAt(mWord);
   }
+  newdialog.UpdatedWidth();
 
   mModel.insert(mDialog + 1, newdialog);
   curr.UpdatedWidth();
 }
+
+//
+// SplitToPrevLine
+//
+
+
+LRCmd::SplitToPrevLine::SplitToPrevLine(DialogVec &model, i32 iDialog, i32 iWord) :
+  CmdBase(model)
+{
+  setText("Split to previous line");
+  mDialog = iDialog;
+  mWord = iWord;
+}
+
+void LRCmd::SplitToPrevLine::undo()
+{
+  auto &prev = mModel[mDialog];
+  auto &prevwords = prev.words;
+  auto &curr = mModel[mDialog + 1];
+  auto &currwords = curr.words;
+
+  prevwords.last().delim = mDelimMovedTail;
+
+  for(int i = 0; i < prevwords.size(); i++)
+    currwords.insert(i, prevwords[i]);
+  curr.UpdatedWidth();
+  curr.begin -= prev.duration;
+  curr.duration += prev.duration;
+
+  mModel.removeAt(mDialog);
+}
+
+void LRCmd::SplitToPrevLine::redo()
+{
+  auto &curr = mModel[mDialog];
+  auto &currwords = curr.words;
+  i32 currSize = currwords.size();
+
+  u64 timeDelta = ((f64)mWord / currSize) * curr.duration;
+
+  mDelimMovedTail = currwords[mWord].delim;
+
+  Dialog newdialog {
+    .begin = curr.begin,
+    .duration = timeDelta
+  };
+
+  curr.duration -= timeDelta;
+  curr.begin += timeDelta;
+
+  auto &newwords = newdialog.words;
+  for(int i = 0; i <= mWord; i++)
+  {
+    newwords.append(currwords[0]);
+    currwords.remove(0);
+  }
+  newdialog.UpdatedWidth();
+  newwords.last().delim = '\0';
+
+  mModel.insert(mDialog, newdialog);
+  curr.UpdatedWidth();
+}
+
+//
+// ChangeWord
+//
+
+
+LRCmd::ChangeWord::ChangeWord(DialogVec &model, i32 iDialog, i32 iWord, DiscreteWord &word) :
+  CmdBase(model)
+{
+  mChangeWord = word;
+  mDialog = iDialog;
+  mWord = iWord;
+}
+
+void LRCmd::ChangeWord::undo()
+{
+  auto &curr = mModel[mDialog];
+  curr.words[mWord] = mOrigWord;
+  curr.UpdatedWidth();
+}
+
+void LRCmd::ChangeWord::redo()
+{
+  auto &curr = mModel[mDialog];
+  mOrigWord = curr.words[mWord];
+  curr.words[mWord] = mChangeWord;
+  curr.UpdatedWidth();
+}
+
+//
+// InsertWords
+//
+
+
+LRCmd::InsertWords::InsertWords(DialogVec &model, i32 iDialog, i32 iWord, QVector<DiscreteWord> &insertion) :
+  CmdBase(model)
+{
+  mInsertedWords = insertion;
+  mDialog = iDialog;
+  mWord = iWord;
+}
+
+void LRCmd::InsertWords::undo()
+{
+  auto &curr = mModel[mDialog];
+  auto &currwords = curr.words;
+  auto &ins = mInsertedWords;
+
+  currwords.remove(mWord, ins.size());
+  curr.UpdatedWidth();
+}
+
+void LRCmd::InsertWords::redo()
+{
+  auto &curr = mModel[mDialog];
+  auto &currwords = curr.words;
+  auto &ins = mInsertedWords;
+
+  for(int i = 0; i < ins.size(); i++)
+    currwords.insert(mWord + i, ins[i]);
+  curr.UpdatedWidth();
+}
+
+//
+// RemoveWord
+//
+
+
+LRCmd::RemoveWord::RemoveWord(DialogVec &model, i32 iDialog, i32 iWord) :
+  CmdBase(model)
+{
+  mDialog = iDialog;
+  mWord = iWord;
+}
+
+void LRCmd::RemoveWord::undo()
+{
+  auto &curr = mModel[mDialog];
+  auto &currwords = curr.words;
+  currwords.insert(mWord, mRemovedWord);
+  curr.UpdatedWidth();
+}
+
+void LRCmd::RemoveWord::redo()
+{
+  auto &curr = mModel[mDialog];
+  auto &currwords = curr.words;
+  mRemovedWord = currwords[mWord];
+  currwords.removeAt(mWord);
+  curr.UpdatedWidth();
+}
+
+

@@ -5,6 +5,7 @@
 
 #include <QIODevice>
 #include <QBuffer>
+#include <QPair>
 #include <rint.h>
 
 struct WavFormat
@@ -26,7 +27,7 @@ union uichar {
     quint32 i;
 };
 
-class WavDecoder : public QBuffer
+class WavDecoder : public QObject
 {
     Q_OBJECT
 
@@ -37,11 +38,22 @@ public:
     // should read all contents of file/socket and decode it to PCM in buf
     virtual bool cacheAll(QIODevice *);
 
+    QPair<f32, f32> GetWaveformPeaksForRange(i32 begin, i32 end);
+
+    i32 SampleRate() { return fmt.sampleRate; }
+    i32 GetLengthMs() { return mData.size() / (fmt.sampleSize / 8) * 1000 / fmt.sampleRate; }
+
+    void clear() { mData.clear(); }
+    i32 size() { return mData.size(); }
+
+
 protected:
     WavFormat fmt; // format of that raw PCM data
 
     bool findFormatChunk(QDataStream &reader);
     bool findDataChunk(QDataStream &reader);
+
+    QByteArray mData;
 
 protected:
     QIODevice *dev;

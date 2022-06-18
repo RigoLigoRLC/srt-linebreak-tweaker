@@ -4,6 +4,7 @@
 
 #include <qendian.h>
 #include <QDataStream>
+#include <QDebug>
 
 
 //----- WAV PCM RIFF header parts -----------------------
@@ -195,15 +196,68 @@ bool WavDecoder::cacheAll(QIODevice *_dev)
 
         fmt.byteOrder = WavFormat::LittleEndian;
 
-        open(QIODevice::WriteOnly);
-        write(dev->read(_data_chunk_length * fmt.sampleSize / 8 * fmt.channelCount));
-        close();
+        mData = dev->read(_data_chunk_length * fmt.sampleSize / 8 * fmt.channelCount);
     }
 
     return result;
 }
 
-WavDecoder::WavDecoder(QObject *parent) : QBuffer(parent)
+QPair<f32, f32> WavDecoder::GetWaveformPeaksForRange(i32 samplebegin, i32 sampleend)
+{
+  QPair<f32, f32> ret;
+  f32 max = 0, min = 0;
+
+  auto d = mData.data();
+  if(samplebegin < 0)
+    samplebegin = 0;
+  auto sampleCount = mData.size() / (fmt.sampleSize / 8);
+  if(sampleend > sampleCount)
+    sampleend = sampleCount - 1;
+
+  switch(fmt.sampleType)
+  {
+    case WavFormat::Int8:
+      for(int i = samplebegin; i < sampleend; i++)
+      {
+        f32 val = (f32)((i8*)d)[i];
+        max = std::max(val, max);
+        min = std::min(val, min);
+      }
+      ret.first = max / 127;
+      ret.second = min / 128;
+      break;
+
+    case WavFormat::Int16:
+      for(int i = samplebegin; i < sampleend; i++)
+      {
+//        qDebug() << d << mData.size() << i;
+        f32 val = (f32)((i16*)d)[i];
+        max = std::max(val, max);
+        min = std::min(val, min);
+      }
+      ret.first = max / 32767;
+      ret.second = min / 32768;
+      break;
+
+    case WavFormat::Float32:
+      for(int i = samplebegin; i < sampleend; i++)
+      {
+        f32 val = ((f32*)d)[i];
+        max = std::max(val, max);
+        min = std::min(val, min);
+      }
+      ret.first = max;
+      ret.second = min;
+      break;
+
+    default:
+      break;
+  }
+
+  return ret;
+}
+
+WavDecoder::WavDecoder(QObject *parent) : QObject(parent)
 {
 
 }
