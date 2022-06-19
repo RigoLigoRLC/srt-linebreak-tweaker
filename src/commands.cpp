@@ -44,6 +44,8 @@ void LRCmd::MergeToPrevLine::undo()
   prev.words.last().delim = '\0';
   curr.UpdatedWidth();
   prev.UpdatedWidth();
+  curr.UpdatedCompleteText();
+  prev.UpdatedCompleteText();
 }
 
 void LRCmd::MergeToPrevLine::redo()
@@ -67,6 +69,7 @@ void LRCmd::MergeToPrevLine::redo()
   {
     prev.duration += curr.duration;
     prev.UpdatedWidth();
+    prev.UpdatedCompleteText();
     mModel.removeAt(mDialog);
     mCurrDestroyed = true;
   }
@@ -78,6 +81,8 @@ void LRCmd::MergeToPrevLine::redo()
     prev.duration += timeDelta;
     curr.UpdatedWidth();
     prev.UpdatedWidth();
+    curr.UpdatedCompleteText();
+    prev.UpdatedCompleteText();
   }
 }
 
@@ -122,6 +127,8 @@ void LRCmd::MergeToNextLine::undo()
   curr.words.last().delim = '\0';
   curr.UpdatedWidth();
   next.UpdatedWidth();
+  curr.UpdatedCompleteText();
+  next.UpdatedCompleteText();
 }
 
 void LRCmd::MergeToNextLine::redo()
@@ -148,6 +155,7 @@ void LRCmd::MergeToNextLine::redo()
     mModel.removeAt(mDialog);
     mCurrDestroyed = true;
     next.UpdatedWidth();
+    next.UpdatedCompleteText();
   }
   else
   {
@@ -160,6 +168,8 @@ void LRCmd::MergeToNextLine::redo()
     next.duration += timeDelta;
     curr.UpdatedWidth();
     next.UpdatedWidth();
+    curr.UpdatedCompleteText();
+    next.UpdatedCompleteText();
   }
 }
 
@@ -184,6 +194,7 @@ void LRCmd::SplitToNextLine::undo()
   currwords.append(nextwords);
   curr.duration += next.duration;
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
   mModel.removeAt(mDialog + 1);
 }
 
@@ -209,9 +220,11 @@ void LRCmd::SplitToNextLine::redo()
     currwords.removeAt(mWord);
   }
   newdialog.UpdatedWidth();
+  newdialog.UpdatedCompleteText();
 
   mModel.insert(mDialog + 1, newdialog);
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
 }
 
 //
@@ -239,6 +252,7 @@ void LRCmd::SplitToPrevLine::undo()
   for(int i = 0; i < prevwords.size(); i++)
     currwords.insert(i, prevwords[i]);
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
   curr.begin -= prev.duration;
   curr.duration += prev.duration;
 
@@ -271,9 +285,11 @@ void LRCmd::SplitToPrevLine::redo()
   }
   newdialog.UpdatedWidth();
   newwords.last().delim = '\0';
+  newdialog.UpdatedCompleteText();
 
   mModel.insert(mDialog, newdialog);
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
 }
 
 //
@@ -294,14 +310,17 @@ void LRCmd::ChangeWord::undo()
   auto &curr = mModel[mDialog];
   curr.words[mWord] = mOrigWord;
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
 }
 
 void LRCmd::ChangeWord::redo()
 {
   auto &curr = mModel[mDialog];
   mOrigWord = curr.words[mWord];
+  mChangeWord.delim = mOrigWord.delim; // Preserve delimiter! This is important
   curr.words[mWord] = mChangeWord;
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
 }
 
 //
@@ -325,6 +344,7 @@ void LRCmd::InsertWords::undo()
 
   currwords.remove(mWord, ins.size());
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
 }
 
 void LRCmd::InsertWords::redo()
@@ -336,6 +356,7 @@ void LRCmd::InsertWords::redo()
   for(int i = 0; i < ins.size(); i++)
     currwords.insert(mWord + i, ins[i]);
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
 }
 
 //
@@ -356,6 +377,7 @@ void LRCmd::RemoveWord::undo()
   auto &currwords = curr.words;
   currwords.insert(mWord, mRemovedWord);
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
 }
 
 void LRCmd::RemoveWord::redo()
@@ -365,6 +387,7 @@ void LRCmd::RemoveWord::redo()
   mRemovedWord = currwords[mWord];
   currwords.removeAt(mWord);
   curr.UpdatedWidth();
+  curr.UpdatedCompleteText();
 }
 
 

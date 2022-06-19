@@ -74,6 +74,8 @@ class Reorganizer : public QWidget
     Status AppendToModel(u64 begin, u64 end, QString dialog);
     Status AddToModel(u64 begin, u64 end, QString dialog);
 
+    i32 FindDialogAt(u64 at); ///< Bisect model to find a dialog that goes through a time
+
     Status CommitCurrentOperation();
 
     void UpdateTimecodeButtons();
@@ -136,8 +138,11 @@ class Reorganizer : public QWidget
       LineEditorWidth = 250, // Fixed wdith for block editor QLineEdit *mEdit
 
       // NLE space
-      NleHeight = 200,
-      WaveformHeight = 120
+      WaveformHeight = 110,
+      BlockHeight = 60,
+      NleScaleHeight = 30,
+      NleHeight = WaveformHeight + BlockHeight + NleScaleHeight,
+      NleBlockMargin = 5
     ;
     static constexpr f64
       ScrollCoeff = -0.9,
@@ -166,6 +171,7 @@ struct Dialog
   enum { Real, Placeholder } type;
   u64 begin, duration;
   QVector<DiscreteWord> words;
+  QString completeText;
   u64 end() { return begin + duration; };
 
   f64 width;
@@ -175,6 +181,18 @@ struct Dialog
     for(auto &i : words)
       ret += i._cachedBlockWidthPx;
     return (width = ret);
+  }
+
+  QString& UpdatedCompleteText()
+  {
+    completeText.clear();
+    for(auto &j : words)
+    {
+      completeText += j.text;
+      if(j.delim.cell())
+        completeText += j.delim;
+    }
+    return completeText;
   }
 };
 

@@ -17,7 +17,7 @@
 
 Reorganizer::Reorganizer(QWidget *parent) :
   QWidget(parent),
-  mDispFont("sansserif", 9),
+  mDispFont("sansserif", 10),
   mDispFontMet(mDispFont),
   mMouseDownPos(),
   mWav(this)
@@ -135,14 +135,7 @@ void Reorganizer::SaveFile(QString name)
   {
     ts << count << '\n';
     ts << MStoSrtTC(i.begin) << " --> " << MStoSrtTC(i.end()) << '\n';
-    for(auto &j : i.words)
-    {
-      ts << j.text;
-      if(j.delim.cell())
-        ts << j.delim;
-      else
-        ts << '\n';
-    }
+    ts << i.UpdatedCompleteText() << '\n';
     ts << '\n';
     count++;
   }
@@ -336,6 +329,42 @@ void Reorganizer::paintEvent(QPaintEvent *e)
     p.translate(0, h_list); // Use relative coordinate of NLE editor
     p.setClipping(false);
 
+    f32 pxPerMs = f32(w) / (mNleRangeMsEnd - mNleRangeMsBegin);
+
+    // NLE blockes
+    p.setFont(QFont("sansserif", 15));
+    if(mNleRangeMsBegin < mNleRangeMsEnd)
+    {
+      i32 beginDialog = FindDialogAt(mNleRangeMsBegin);
+      if(beginDialog >= 0)
+      {
+        f32 dialogTopLeft = (i32(mModel[beginDialog].begin) - mNleRangeMsBegin) * pxPerMs;
+        i32 i = beginDialog;
+        p.setBrush(QBrush(BgTile));
+        while(dialogTopLeft < w)
+        {
+          p.drawRect(QRectF(dialogTopLeft, 0,
+                            mModel[i].duration * pxPerMs, BlockHeight));
+          // Text bounding box
+//          p.drawRect(QRectF(QPointF(std::max(dialogTopLeft, 0.0f) + NleBlockMargin,
+//                                    NleBlockMargin),
+//                            QPointF(std::min(dialogTopLeft + mModel[i].duration * pxPerMs - NleBlockMargin, f32(w) - NleBlockMargin),
+//                                    BlockHeight - NleBlockMargin)));
+          p.drawText(QRectF(QPointF(std::max(dialogTopLeft, 0.0f) + NleBlockMargin,
+                                    NleBlockMargin),
+                            QPointF(std::min(dialogTopLeft + mModel[i].duration * pxPerMs - NleBlockMargin, f32(w) - NleBlockMargin),
+                                    BlockHeight - NleBlockMargin)),
+                     Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignTop,
+                     mModel[i].completeText);
+          // Debug text
+//          p.drawText(QPointF(dialogTopLeft, 0), QString::number(i) + ", " + QString::number(dialogTopLeft) + ", ");
+          i++;
+          dialogTopLeft = (mModel[i].begin - mNleRangeMsBegin) * pxPerMs;
+        }
+      }
+      p.drawText(QPointF(0, 0), QString::number(beginDialog));
+    }
+
     // Paint waveform
     if(mNleRangeMsBegin < mNleRangeMsEnd)
     {
@@ -345,7 +374,6 @@ void Reorganizer::paintEvent(QPaintEvent *e)
       // Make sampleBegin always a multiply of samplePerPx
       sampleBegin = floor(sampleBegin / samplePerPx) * samplePerPx;
       sampleEnd = sampleBegin + samplePerPx;
-      qDebug() << sampleBegin << samplePerPx;
       for(i32 i = 0; i < w; i++)
       {
         auto peaks = mWav.GetWaveformPeaksForRange(floor(sampleBegin), floor(sampleEnd));
@@ -374,6 +402,41 @@ void Reorganizer::paintEvent(QPaintEvent *e)
       p.drawRect(QRectF(0, 0, w, WaveformHeight));
       p.translate(0, -(NleHeight - WaveformHeight));
       p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    }
+
+    // paint time scale
+    if(mNleRangeMsBegin < mNleRangeMsEnd)
+    {
+      // Determine interval
+
+      f32 range = mNleRangeMsEnd - mNleRangeMsBegin;
+      // log1 = 0
+      // log5 = 0.69897
+      f32 rangeLog = log10(range), exponential;
+      rangeLog = modf(rangeLog, &exponential);
+      // Smaller than 5*10^n uses 1*10^(n-1) as interval
+      // Greater than 5*10^n uses 5*10^(n-1) as interval
+      f32 interval = pow(((rangeLog > 0.69897f) ? 5 : 1) * 10, exponential - 1);
+
+      // Round the begin time to a multiply of the interval
+      f32 begin = floor(mNleRangeMsBegin / interval) * interval,
+          linePos = (begin - mNleRangeMsBegin) * pxPerMs;
+
+      p.setPen(DivLine);
+      p.setBrush(FgText);
+      p.drawLine(QPointF(0, BlockHeight), QPointF(w, BlockHeight));
+      p.drawLine(QPointF(0, BlockHeight + NleScaleHeight), QPointF(w, BlockHeight + NleScaleHeight));
+      while(linePos < w)
+      {
+        p.drawLine(QPointF(linePos, BlockHeight),
+                   QPointF(linePos, BlockHeight + NleScaleHeight));
+        p.drawText(QRectF(QPointF(linePos + 2, BlockHeight),
+                          QSizeF(interval * pxPerMs, NleScaleHeight)),
+                   Qt::AlignVCenter | Qt::AlignLeft,
+                   MStoTC(begin));
+        begin += interval;
+        linePos = (begin - mNleRangeMsBegin) * pxPerMs;
+      }
     }
   }
 
@@ -743,7 +806,8 @@ Status Reorganizer::AppendToModel(u64 begin, u64 end, QString dialog)
   mModel.append(Dialog { .type = Dialog::Real,
                          .begin = begin,
                          .duration = end - begin,
-                         .words = SplitDialogByDelim(dialog) });
+                         .words = SplitDialogByDelim(dialog),
+                         .completeText = dialog });
   mModel.back().UpdatedWidth();
   UpdateExternals(false);
   return Success;
@@ -752,6 +816,33 @@ Status Reorganizer::AppendToModel(u64 begin, u64 end, QString dialog)
 Status Reorganizer::AddToModel(u64 begin, u64 end, QString dialog)
 {
   return Success;
+}
+
+i32 Reorganizer::FindDialogAt(u64 at)
+{
+  if(mModel.isEmpty())
+    return -1;
+  // Find closest begin time
+  i32 A = 0, B = mModel.size() - 1;
+  while(A < B - 1)
+  {
+    i32 mid = (B - A) / 2 + A;
+    if(mModel[mid].begin > at)
+      B = mid;
+    else if(mModel[mid].begin < at)
+      A = mid;
+    else
+      return mid;
+  }
+  // When this loop is over, we'd have `at` between A.begin and B.begin (except when you only have 2 elements)
+  // Check if A's length covers `at`
+  if(mModel[A].end() > at)
+    return A;
+  // If A is not covering `at`, consider the edge case of 2 elements
+  else if (mModel[B].end() > at)
+    return B;
+  else
+    return -1;
 }
 
 Status Reorganizer::CommitCurrentOperation()
@@ -914,7 +1005,7 @@ QVector<DiscreteWord> Reorganizer::SplitDialogByDelim(QString dialog, QString de
   }
   // If the string doesn't end with a delim, the last word is not put into ret.
   // Detect this and add it in right here
-  if(i != dialog.size() - 1)
+  if(dialog.size() && i != dialog.size() - 1)
   {
     auto newstr = dialog.mid(last);
     ret.append(DiscreteWord {

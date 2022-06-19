@@ -22,7 +22,7 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
     <property name="spacing">
-     <number>0</number>
+     <number>1</number>
     </property>
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout">
@@ -74,6 +74,22 @@
        </widget>
       </item>
      </layout>
+    </item>
+    <item>
+     <widget class="QWidget" name="widNewDialog" native="true">
+      <layout class="QHBoxLayout" name="horizontalLayout_6">
+       <item>
+        <widget class="QLabel" name="lblNewDialog">
+         <property name="text">
+          <string>New dialog:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="edtNewDialog"/>
+       </item>
+      </layout>
+     </widget>
     </item>
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout_4">
@@ -182,6 +198,9 @@
     <addaction name="actRedo"/>
     <addaction name="separator"/>
     <addaction name="actClear"/>
+    <addaction name="separator"/>
+    <addaction name="actInsertDialog"/>
+    <addaction name="actRemoveDialog"/>
    </widget>
    <addaction name="menuEdit"/>
   </widget>
@@ -205,6 +224,22 @@
   <action name="actClear">
    <property name="text">
     <string>Clear</string>
+   </property>
+  </action>
+  <action name="actInsertDialog">
+   <property name="text">
+    <string>Insert dialog</string>
+   </property>
+   <property name="shortcut">
+    <string>Shift+Return</string>
+   </property>
+  </action>
+  <action name="actRemoveDialog">
+   <property name="text">
+    <string>Remove dialog</string>
+   </property>
+   <property name="shortcut">
+    <string>Shift+Backspace</string>
    </property>
   </action>
  </widget>

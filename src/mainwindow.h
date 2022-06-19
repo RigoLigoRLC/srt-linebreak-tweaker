@@ -22,10 +22,14 @@ class MainWindow : public QMainWindow
   private:
     void InitUi();
 
+    static void NewDialogEdit_EventFilter(QObject *obj, QEvent *event);
+
   private slots:
     void on_btnOpenSrt_clicked();
     void on_btnSaveSrt_clicked();
     void on_btnLoadWav_clicked();
+
+    void on_actInsertDialog_triggered();
 
   private:
     Ui::MainWindow *ui;

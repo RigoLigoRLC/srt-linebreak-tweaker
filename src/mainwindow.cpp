@@ -34,6 +34,8 @@ void MainWindow::InitUi()
   ui->statusbar->addWidget(mNotif);
   connect(ui->reorg, &Reorganizer::SendNotify,
           mNotif, &StatusNotify::Activate);
+
+  ui->widNewDialog->setVisible(false);
 }
 
 void MainWindow::on_btnOpenSrt_clicked()
@@ -63,5 +65,11 @@ void MainWindow::on_btnLoadWav_clicked()
                                         qApp->applicationDirPath(),
                                         tr("Wave file (*.wav);;All files (*.*)"));
   ui->reorg->OpenWave(f);
+}
+
+
+void MainWindow::on_actInsertDialog_triggered()
+{
+
 }
 
