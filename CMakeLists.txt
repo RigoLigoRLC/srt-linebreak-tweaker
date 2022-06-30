@@ -11,8 +11,9 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 COMPONENTS Widgets LinguistTools REQUIRED)
-find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets LinguistTools REQUIRED)
+set(QT_VERSION_MAJOR 5)
+
+find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets Multimedia LinguistTools REQUIRED)
 
 include_directories(src)
 
@@ -69,7 +70,9 @@ else()
 endif()
 
 target_link_libraries(linebreak_reorganizer PRIVATE
-    Qt${QT_VERSION_MAJOR}::Widgets)
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Multimedia
+)
 
 set_target_properties(linebreak_reorganizer PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER my.example.com

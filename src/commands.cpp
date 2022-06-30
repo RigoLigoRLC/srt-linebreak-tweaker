@@ -33,6 +33,8 @@ void LRCmd::MergeToPrevLine::undo()
   curr.begin = mCurrBegin;
   curr.duration = mCurrDuration;
 
+  prev.words.last().delim = mDelimMovedTail;
+
   auto begin = prev.words.size() - mWord - 1;
   for(int i = 0; i <= mWord; i++)
   {
@@ -40,7 +42,6 @@ void LRCmd::MergeToPrevLine::undo()
     prev.words.removeAt(begin);
   }
 
-  curr.words.last().delim = mDelimMovedTail;
   prev.words.last().delim = '\0';
   curr.UpdatedWidth();
   prev.UpdatedWidth();
@@ -111,12 +112,14 @@ void LRCmd::MergeToNextLine::undo()
                     .begin = mModel[mDialog].begin
                   });
   }
+  else
+  {
+    mModel[mDialog].words.last().delim = mDelimMovedTail;
+  }
   auto &curr = mModel[mDialog], &next = mModel[mNextDialog];
   next.begin = mNextBegin;
   next.duration = mNextDuration;
   curr.duration = mCurrDuration;
-
-  //  curr.words.last().delim = mDelimMovedTail;
 
   for(int i = 0; i < mMoveCount; i++)
   {

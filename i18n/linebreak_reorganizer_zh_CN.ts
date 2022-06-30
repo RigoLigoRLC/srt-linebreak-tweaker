@@ -84,28 +84,28 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/mainwindow.cpp" line="44"/>
+        <location filename="../src/mainwindow.cpp" line="45"/>
         <source>Open SRT file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/mainwindow.cpp" line="46"/>
-        <location filename="../src/mainwindow.cpp" line="56"/>
+        <location filename="../src/mainwindow.cpp" line="47"/>
+        <location filename="../src/mainwindow.cpp" line="57"/>
         <source>SRT file (*.srt);;All files (*.*)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/mainwindow.cpp" line="54"/>
+        <location filename="../src/mainwindow.cpp" line="55"/>
         <source>Save SRT file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/mainwindow.cpp" line="64"/>
+        <location filename="../src/mainwindow.cpp" line="65"/>
         <source>Open WAV file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/mainwindow.cpp" line="66"/>
+        <location filename="../src/mainwindow.cpp" line="67"/>
         <source>Wave file (*.wav);;All files (*.*)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -113,62 +113,62 @@
 <context>
     <name>Reorganizer</name>
     <message>
-        <location filename="../src/reorganizer.cpp" line="72"/>
+        <location filename="../src/reorganizer.cpp" line="75"/>
         <source>Cannot open SRT file. Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="119"/>
+        <location filename="../src/reorganizer.cpp" line="122"/>
         <source>Loaded %1 lines</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="129"/>
+        <location filename="../src/reorganizer.cpp" line="132"/>
         <source>Cannot save SRT file. Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="150"/>
+        <location filename="../src/reorganizer.cpp" line="153"/>
         <source>Cannot open WAV file. Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="156"/>
+        <location filename="../src/reorganizer.cpp" line="159"/>
         <source>WAV file successfully loaded.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="160"/>
+        <location filename="../src/reorganizer.cpp" line="163"/>
         <source>Cannot open WAV</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="160"/>
+        <location filename="../src/reorganizer.cpp" line="163"/>
         <source>WAV file unrecognized</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="732"/>
+        <location filename="../src/reorganizer.cpp" line="774"/>
         <source>Change word to multiple words</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="859"/>
+        <location filename="../src/reorganizer.cpp" line="919"/>
         <source>Can&apos;t merge to previous line, because this is already first line!</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="872"/>
+        <location filename="../src/reorganizer.cpp" line="932"/>
         <source>Can&apos;t merge to next line, because this is already last line!</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="884"/>
+        <location filename="../src/reorganizer.cpp" line="944"/>
         <source>Can&apos;t split to previous line from the last word!</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/reorganizer.cpp" line="895"/>
+        <location filename="../src/reorganizer.cpp" line="955"/>
         <source>Can&apos;t split to next line from the first word!</source>
         <translation type="unfinished"></translation>
     </message>

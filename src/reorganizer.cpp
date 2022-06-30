@@ -5,6 +5,7 @@
 #include <QTextCodec>
 #include <QApplication>
 #include <QStyleHints>
+#include <QAudioDeviceInfo>
 #include <math.h>
 
 #include <QDebug>
@@ -20,7 +21,8 @@ Reorganizer::Reorganizer(QWidget *parent) :
   mDispFont("sansserif", 10),
   mDispFontMet(mDispFont),
   mMouseDownPos(),
-  mWav(this)
+  mWav(this),
+  mAudioOut(QAudioDeviceInfo::defaultOutputDevice())
 {
   mCurrentActiveLine = mCurrentLongestLine = mCurrentLine = mCurrentOperatingLine = -1;
   mLongestLineWidth = 0.0;
@@ -32,14 +34,15 @@ Reorganizer::Reorganizer(QWidget *parent) :
   mDesiredDragOp = NoDrag;
   mMouseDownTime = QTime::currentTime();
   mExpectingDblClk = false;
+  mWaveformPlaying = mNleDragging = false;
 
   mNleRangeMsBegin = mNleRangeMsEnd = mNleMaximumLengthMs = 0;
+  mAudioPlayRegionA = mAudioPlayRegionB = -1;
 
   mEdit = new QLineEdit(this);
   mEdit->setFixedWidth(250);
   mEdit->setVisible(false); // Hidden by default
   connect(mEdit, &QLineEdit::returnPressed, this, &Reorganizer::EditBlockTextInSitu_Commit);
-
 }
 
 void Reorganizer::SetScrollBars(QScrollBar *horiz, QScrollBar *vert, QScrollBar *nleHoriz)
@@ -372,6 +375,7 @@ void Reorganizer::paintEvent(QPaintEvent *e)
           sampleBegin = mNleRangeMsBegin / 1000.0 * mWav.SampleRate(),
           sampleEnd;
       // Make sampleBegin always a multiply of samplePerPx
+      // Doesn't lose a lot of precision but brings huge stability to the waveforms
       sampleBegin = floor(sampleBegin / samplePerPx) * samplePerPx;
       sampleEnd = sampleBegin + samplePerPx;
       for(i32 i = 0; i < w; i++)
@@ -453,7 +457,10 @@ void Reorganizer::mousePressEvent(QMouseEvent *e)
   f64 endPos;
 
   if(e->pos().y() > h)
+  {
+    e->pos().ry() -= h;
     return NleMousePressEvent(e);
+  }
 
   mCurrentActiveLine = mCurrentLine + (deltaY + Sign(deltaY) * LineHeight / 2) / LineHeight;
   if(mCurrentActiveLine < 0 || mCurrentActiveLine >= mModel.size()) // Line invalid
@@ -622,7 +629,28 @@ void Reorganizer::resizeEvent(QResizeEvent *e)
 
 void Reorganizer::NleMousePressEvent(QMouseEvent *e)
 {
-
+  auto pos = e->pos();
+  if(pos.y() < BlockHeight)
+  {
+    // Subtitle block
+  }
+  else if(pos.y() < BlockHeight + NleScaleHeight)
+  {
+    // Scale
+  }
+  else
+  {
+    // Waveform
+    if(e->button() == Qt::LeftButton)
+    {
+      mAudioPlayRegionA = NleXtoMS(pos.x());
+      mNleDragging = true;
+    }
+    else
+    {
+      // TODO: Menu
+    }
+  }
 }
 
 void Reorganizer::NleMouseMoveEvent(QMouseEvent *e)
@@ -632,7 +660,19 @@ void Reorganizer::NleMouseMoveEvent(QMouseEvent *e)
 
 void Reorganizer::NleMouseReleaseEvent(QMouseEvent *e)
 {
+  mNleDragging = false;
+  switch(mNleCurrentOp)
+  {
+    case DragWaveform:
+      if(mAudioPlayRegionA > mAudioPlayRegionB)
+        std::swap(mAudioPlayRegionA, mAudioPlayRegionB);
+      PlayAudioRegion(mAudioPlayRegionA, mAudioPlayRegionB);
+      mWaveformPlaying = true;
+      break;
 
+    default:
+      break;
+  }
 }
 
 void Reorganizer::NleWheelEvent(QWheelEvent *e)
@@ -702,6 +742,7 @@ void Reorganizer::EditBlockTextInSitu_Start(QPointF bottomLeft, QString text)
 {
   EditBlockTextInSitu_Placement(bottomLeft);
   mEdit->setVisible(true);
+  mEdit->setEnabled(true);
   mEdit->setText(text);
   mEdit->setSelection(0, text.size());
   mEdit->setCursorPosition(text.size());
@@ -710,6 +751,7 @@ void Reorganizer::EditBlockTextInSitu_Start(QPointF bottomLeft, QString text)
 void Reorganizer::EditBlockTextInSitu_Abort()
 {
   mEdit->setVisible(false);
+  mEdit->setDisabled(true);
   SetDirtyAction(NoAction);
   mInSituEditorLeftMargin = mInSituEditorOffCenterMargin = 0;
 }
@@ -717,6 +759,7 @@ void Reorganizer::EditBlockTextInSitu_Abort()
 void Reorganizer::EditBlockTextInSitu_Commit()
 {
   mEdit->setVisible(false);
+  mEdit->setDisabled(true);
   auto delta = SplitDialogByDelim(mEdit->text());
   switch(delta.size())
   {
@@ -739,6 +782,11 @@ void Reorganizer::EditBlockTextInSitu_Commit()
   SetDirtyAction(NoAction);
   UpdateListArea();
   mInSituEditorLeftMargin = mInSituEditorOffCenterMargin = 0;
+}
+
+void Reorganizer::AudioPlaybackStopped()
+{
+
 }
 
 //
@@ -789,6 +837,19 @@ void Reorganizer::NleShiftTimeMs(int ms, bool changeScrollBar)
   mNleRangeMsEnd += ms;
   if(changeScrollBar)
     mBarNleHoriz->setValue(mBarNleHoriz->value() + ms);
+}
+
+i32 Reorganizer::NleXtoMS(i32 x)
+{
+  return mNleRangeMsBegin + (f32(x) / width()) * (mNleRangeMsEnd - mNleRangeMsBegin);
+}
+
+void Reorganizer::PlayAudioRegion(i32 beginMs, i32 endMs)
+{
+  i32 beginSample = beginMs / 1000.0 * mWav.SampleRate(),
+      endSample   = endMs   / 1000.0 * mWav.SampleRate();
+
+//  mAudioOut.start(QBuffer())
 }
 
 //

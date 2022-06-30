@@ -11,6 +11,7 @@
 #include <QFontMetricsF>
 #include <QUndoStack>
 #include <QTime>
+#include <QAudioOutput>
 #include <rint.h>
 #include <common.h>
 #include <wavdecoder.h>
@@ -60,6 +61,8 @@ class Reorganizer : public QWidget
     void EditBlockTextInSitu_Abort();
     void EditBlockTextInSitu_Commit();
 
+    void AudioPlaybackStopped();
+
   private: // Methods
     // Status setters (with extra event processing inside)
     enum DirtyActionType { NoAction = 0, DragBlock, DragNleBlock, DragNleTiming, DblClkEditBlock };
@@ -69,6 +72,9 @@ class Reorganizer : public QWidget
     void SanitizeActiveSelection();
 
     void NleShiftTimeMs(int, bool changeScrollBar = true);
+    i32 NleXtoMS(i32);
+
+    void PlayAudioRegion(i32 beginMs, i32 endMs);
 
     // Model interface
     Status AppendToModel(u64 begin, u64 end, QString dialog);
@@ -96,22 +102,26 @@ class Reorganizer : public QWidget
     WavDecoder mWav;
 
     // Status
-    bool mDoUpdateScrollBarOnChange, mExpectingDblClk;
+    bool mDoUpdateScrollBarOnChange, mExpectingDblClk, mWaveformPlaying, mNleDragging;
     DirtyActionType mDirtyActionType;
     i32 mCurrentLine, mCurrentOperatingLine, mCurrentEditingWord, mCurrentLongestLine,
         mCurrentActiveLine;
     f64 mLongestLineWidth;
     i32 mVertScrollOffset, mHorizScrollOffset;
-    QPointF mMouseDownPos;
-    QTime mMouseDownTime;
+    QPointF mMouseDownPos; ///< Only for list editor
+    QTime mMouseDownTime; ///< Only for double click detection
     enum { NoDrag = 0, AtPlace, MergeNext, MergePrev, SplitNext, SplitPrev } mDesiredDragOp;
 
     // NLE Editor
     i32 mNleRangeMsBegin, mNleRangeMsEnd, mNleMaximumLengthMs;
+    i32 mAudioPlayRegionA, mAudioPlayRegionB; ///< In milliseconds
+    enum { NoNle = 0, DragWaveform, MoveDialog, DragDialogHead, DragDialogTail } mNleCurrentOp;
 
+    // Repaint parameters
     enum UpdateAreaFlag { NoUpd = 0, ListArea = 1, NleArea = 2 };
     i32 mUpdateArea;
 
+    // Undo stack
     QUndoStack mUndo;
 
     // Related components
@@ -120,6 +130,9 @@ class Reorganizer : public QWidget
     QFontMetricsF mDispFontMet;
 
     QPushButton *mBtnBegin, *mBtnEnd;
+
+    // Player
+    QAudioOutput mAudioOut;
 
     // In-situ Editor related
     QLineEdit *mEdit;
@@ -194,6 +207,17 @@ struct Dialog
     }
     return completeText;
   }
+};
+class AudioDataFeeder : public QObject
+{
+    Q_OBJECT
+  public:
+    AudioDataFeeder(QObject* parent, WavDecoder* wav);
+    void SetInterval(i32 ms);
+    void Start(QIODevice*);
+
+  public slots:
+
 };
 
 #endif // REORGANIZER_H

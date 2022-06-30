@@ -257,6 +257,11 @@ QPair<f32, f32> WavDecoder::GetWaveformPeaksForRange(i32 samplebegin, i32 sample
   return ret;
 }
 
+QByteArray WavDecoder::GetSamples(i32 begin, i32 end)
+{
+  return mData.mid(begin, end - begin);
+}
+
 WavDecoder::WavDecoder(QObject *parent) : QObject(parent)
 {
 

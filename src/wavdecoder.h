@@ -46,6 +46,8 @@ public:
     void clear() { mData.clear(); }
     i32 size() { return mData.size(); }
 
+    QByteArray GetSamples(i32 begin, i32 end);
+
 
 protected:
     WavFormat fmt; // format of that raw PCM data

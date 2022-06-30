@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include <QFileDialog>
+#include <QAudioDeviceInfo>
 
 MainWindow::MainWindow(QWidget *parent)
   : QMainWindow(parent)
